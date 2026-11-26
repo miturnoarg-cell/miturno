@@ -17,7 +17,6 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
-    // Adaptador ligero de íconos Lucide para navegador sin bundler
     function LucideIcon({ name, className = "w-4 h-4", ...props }) {
       const ref = useRef(null);
       useEffect(() => {
@@ -65,6 +64,9 @@
     const Camera = (p) => <LucideIcon name="Camera" {...p} />;
     const Image = (p) => <LucideIcon name="Image" {...p} />;
     const Upload = (p) => <LucideIcon name="Upload" {...p} />;
+    const CreditCard = (p) => <LucideIcon name="CreditCard" {...p} />;
+    const ShieldCheck = (p) => <LucideIcon name="ShieldCheck" {...p} />;
+    const Wallet = (p) => <LucideIcon name="Wallet" {...p} />;
 
     // --- LOGO OFICIAL MITURNO ---
     function MiTurnoLogo({ showWordmark = true, size = 'md', onClick = undefined }) {
@@ -104,7 +106,6 @@
       );
     }
 
-    // --- AVATAR DEL COMERCIO (FOTO DE PERFIL O INICIALES) ---
     function BusinessAvatar({ biz, size = 'md' }) {
       const sizes = {
         sm: 'w-10 h-10 text-xs rounded-xl',
@@ -183,6 +184,8 @@
         coverUrl: COVER_PRESETS.barberia,
         avatarUrl: AVATAR_PRESETS.barberia,
         minPrice: 9500,
+        depositPercent: 50,
+        mpAlias: 'elclasico.barber.mp',
         staffLabel: 'Barbero',
         staff: [
           { id: 's1', name: 'Mateo González', role: 'Master Barber' },
@@ -204,11 +207,13 @@
         reviews: 142,
         distance: '1.1 km',
         neighborhood: 'Playa Grande, Mar del Plata',
-        badge: 'Blindex Techadas',
+        badge: 'Seña con Mercado Pago',
         gradient: 'from-emerald-600 via-teal-600 to-[#4F46E5]',
         coverUrl: COVER_PRESETS.canchas,
         avatarUrl: AVATAR_PRESETS.canchas,
         minPrice: 18000,
+        depositPercent: 50,
+        mpAlias: 'costapadel.mdp.mp',
         staffLabel: 'Cancha',
         staff: [
           { id: 'c1', name: 'Cancha 1 (Blindex Techada)', role: 'Césped Sintético Pro' },
@@ -229,11 +234,13 @@
         reviews: 164,
         distance: '800 m',
         neighborhood: 'Güemes, Mar del Plata',
-        badge: '20% OFF Efectivo',
+        badge: 'Mercado Pago / Tarjeta',
         gradient: 'from-[#4F46E5] via-purple-600 to-indigo-700',
         coverUrl: COVER_PRESETS.estetica,
         avatarUrl: AVATAR_PRESETS.estetica,
         minPrice: 12500,
+        depositPercent: 50,
+        mpAlias: 'aura.estetica.mdp',
         staffLabel: 'Especialista',
         staff: [
           { id: 'e1', name: 'Sofía Martínez', role: 'Cosmiatra' },
@@ -260,6 +267,8 @@
         coverUrl: COVER_PRESETS.salud,
         avatarUrl: AVATAR_PRESETS.salud,
         minPrice: 15000,
+        depositPercent: 50,
+        mpAlias: 'kinesica.salud.mp',
         staffLabel: 'Profesional',
         staff: [
           { id: 'k1', name: 'Lic. Martín Sosa', role: 'Kinesiólogo Deportivo' },
@@ -287,6 +296,8 @@
         clientPhone: '223 541-8890',
         status: 'confirmed',
         source: 'app',
+        paymentMethod: 'mercadopago',
+        paidAmount: 7000,
         isMine: false
       },
       {
@@ -303,6 +314,8 @@
         clientPhone: '223 612-3341',
         status: 'confirmed',
         source: 'manual',
+        paymentMethod: 'local',
+        paidAmount: 0,
         isMine: false
       },
       {
@@ -319,6 +332,8 @@
         clientPhone: '223 498-1122',
         status: 'confirmed',
         source: 'app',
+        paymentMethod: 'mercadopago',
+        paidAmount: 4750,
         isMine: true
       },
       {
@@ -335,6 +350,8 @@
         clientPhone: '223 555-0192',
         status: 'confirmed',
         source: 'app',
+        paymentMethod: 'mercadopago',
+        paidAmount: 9000,
         isMine: false
       },
       {
@@ -351,6 +368,8 @@
         clientPhone: '223 502-7741',
         status: 'confirmed',
         source: 'app',
+        paymentMethod: 'card',
+        paidAmount: 12500,
         isMine: false
       }
     ];
@@ -404,6 +423,8 @@
       const [selectedTime, setSelectedTime] = useState(null);
       const [clientName, setClientName] = useState('');
       const [clientPhone, setClientPhone] = useState('');
+      const [paymentOption, setPaymentOption] = useState('mercadopago'); // 'mercadopago' | 'card' | 'local'
+      const [isProcessingPayment, setIsProcessingPayment] = useState(false);
       const [lastCreatedBooking, setLastCreatedBooking] = useState(null);
 
       const [managedBizId, setManagedBizId] = useState('biz-1');
@@ -420,7 +441,6 @@
       const [blockTime, setBlockTime] = useState('17:00');
       const [blockReason, setBlockReason] = useState('Horario reservado / Cerrado');
 
-      // Lectura de imagen local desde el dispositivo (foto de perfil o portada)
       const handleLocalImageUpload = (file, onSuccess) => {
         if (!file) return;
         const reader = new FileReader();
@@ -467,13 +487,13 @@
         setSelectedStaff('any');
         setSelectedDay('hoy');
         setSelectedTime(preselectedTime);
+        setPaymentOption('mercadopago');
+        setIsProcessingPayment(false);
         setBookingStep(preselectedTime ? 3 : 1);
         setLastCreatedBooking(null);
       };
 
-      const handleConfirmClientBooking = (e) => {
-        e.preventDefault();
-        if (!bookingModalBiz || !selectedService || !selectedTime || !clientName.trim()) return;
+      const finalizeBookingCreation = () => {
         let assignedStaff;
         if (selectedStaff === 'any') {
           const busyIds = bookings
@@ -483,6 +503,14 @@
         } else {
           assignedStaff = bookingModalBiz.staff.find((s) => s.id === selectedStaff);
         }
+
+        const depositRatio = (bookingModalBiz.depositPercent || 50) / 100;
+        const paidNow =
+          paymentOption === 'mercadopago'
+            ? Math.round(selectedService.price * depositRatio)
+            : paymentOption === 'card'
+            ? selectedService.price
+            : 0;
 
         const newBooking = {
           id: `bk-${Date.now()}`,
@@ -498,13 +526,34 @@
           clientPhone: clientPhone.trim() || '223 500-0000',
           status: 'confirmed',
           source: 'app',
+          paymentMethod: paymentOption,
+          paidAmount: paidNow,
           isMine: true
         };
 
         setBookings((prev) => [newBooking, ...prev]);
         setLastCreatedBooking(newBooking);
+        setIsProcessingPayment(false);
         setBookingStep(4);
-        showToast(`¡Turno confirmado en ${bookingModalBiz.name}!`);
+        showToast(
+          paidNow > 0
+            ? `¡Pago aprobado (${formatARS(paidNow)}) y turno confirmado!`
+            : `¡Turno confirmado en ${bookingModalBiz.name}!`
+        );
+      };
+
+      const handleConfirmClientBooking = (e) => {
+        e.preventDefault();
+        if (!bookingModalBiz || !selectedService || !selectedTime || !clientName.trim()) return;
+
+        if (paymentOption === 'mercadopago' || paymentOption === 'card') {
+          setIsProcessingPayment(true);
+          setTimeout(() => {
+            finalizeBookingCreation();
+          }, 950);
+        } else {
+          finalizeBookingCreation();
+        }
       };
 
       const handleCancelBooking = (bookingId) => {
@@ -527,6 +576,7 @@
       const merchantKPIs = useMemo(() => {
         const active = merchantBookingsForDay.filter((b) => b.status !== 'cancelled');
         const revenue = active.reduce((sum, b) => sum + b.price, 0);
+        const collectedOnline = active.reduce((sum, b) => sum + (b.paidAmount || 0), 0);
         const totalCapacity = TIME_SLOTS.length * managedBiz.staff.length;
         const blockedCapacity = merchantBlockedForDay.length * managedBiz.staff.length;
         const occupancy = totalCapacity > 0 ? Math.min(100, Math.round(((active.length + blockedCapacity) / totalCapacity) * 100)) : 0;
@@ -534,6 +584,7 @@
         return {
           count: active.length,
           revenue,
+          collectedOnline,
           occupancy,
           nextSlot: nextBooking ? `${nextBooking.time} hs • ${nextBooking.clientName.split(' ')[0]}` : 'Libre'
         };
@@ -569,6 +620,8 @@
           clientPhone: manualClientPhone.trim() || 'Mostrador / Teléfono',
           status: 'confirmed',
           source: 'manual',
+          paymentMethod: 'local',
+          paidAmount: 0,
           isMine: false
         };
 
@@ -606,7 +659,7 @@
         setBusinesses((prev) =>
           prev.map((b) => (b.id === managedBiz.id ? { ...b, [field]: value } : b))
         );
-        showToast(field === 'avatarUrl' ? 'Foto de perfil del local actualizada.' : 'Foto de portada actualizada.');
+        showToast(field === 'avatarUrl' ? 'Foto de perfil actualizada.' : 'Portada actualizada.');
       };
 
       const previewSlug = toSlug(demoSlugInput || demoBusinessName);
@@ -631,11 +684,13 @@
           reviews: 1,
           distance: '300 m',
           neighborhood: demoNeighborhood.trim() || 'Mar del Plata',
-          badge: `Link: miturno.com.ar/${cleanSlug}`,
+          badge: 'Seña Mercado Pago / Tarjeta',
           gradient: 'from-[#4F46E5] via-indigo-600 to-[#10B981]',
           avatarUrl: demoAvatarUrl.trim() || AVATAR_PRESETS[catKey],
           coverUrl: demoCoverUrl.trim() || COVER_PRESETS[catKey],
           minPrice: priceNum,
+          depositPercent: 50,
+          mpAlias: `${cleanSlug.replace(/-/g, '.')}.mp`,
           staffLabel: catObj.id === 'canchas' ? 'Cancha' : 'Profesional',
           staff: [
             { id: `st-${cleanSlug}-1`, name: 'Agenda Principal', role: 'Atención Directa' },
@@ -669,6 +724,10 @@
           ? 'bg-indigo-50 text-[#4F46E5] border-indigo-200 hover:bg-[#4F46E5] hover:text-white'
           : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-[#10B981] hover:text-slate-950';
 
+      const depositAmountPreview = selectedService
+        ? Math.round(selectedService.price * ((bookingModalBiz?.depositPercent || 50) / 100))
+        : 0;
+
       return (
         <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-16">
           {toast && (
@@ -686,7 +745,7 @@
               <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-300">
                 <span className="inline-flex h-2 w-2 rounded-full bg-[#10B981] animate-pulse"></span>
                 <span className="font-medium text-white">{activeCustomLink}</span>
-                <span className="hidden lg:inline">• Probá sacar un turno y mirá cómo impacta en el local</span>
+                <span className="hidden lg:inline">• Probá sacar un turno con seña MP y mirá cómo impacta</span>
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-2 w-full sm:w-auto">
@@ -838,7 +897,6 @@
                       return (
                         <article key={biz.id} className="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition overflow-hidden flex flex-col justify-between">
                           <div>
-                            {/* Portada con foto del local + degradado */}
                             <div className={`relative h-32 bg-gradient-to-r ${biz.gradient} overflow-hidden`}>
                               {biz.coverUrl && (
                                 <img
@@ -860,12 +918,16 @@
                             </div>
 
                             <div className="px-4 pb-4">
-                              {/* Foto de perfil / logo superpuesta + datos */}
                               <div className="flex items-end justify-between gap-3 -mt-7 relative z-10 mb-2">
                                 <BusinessAvatar biz={biz} size="md" />
-                                <div className="text-right bg-[#F8FAFC] border border-slate-200/80 px-3 py-1 rounded-2xl">
-                                  <span className="text-[10px] text-slate-400 block leading-tight">Desde</span>
-                                  <span className="text-sm font-black text-[#4F46E5]">{formatARS(biz.minPrice)}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-extrabold bg-sky-50 text-sky-800 border border-sky-200 px-2.5 py-1 rounded-full">
+                                    Mercado Pago / Tarjeta
+                                  </span>
+                                  <div className="text-right bg-[#F8FAFC] border border-slate-200/80 px-3 py-1 rounded-2xl">
+                                    <span className="text-[10px] text-slate-400 block leading-tight">Desde</span>
+                                    <span className="text-sm font-black text-[#4F46E5]">{formatARS(biz.minPrice)}</span>
+                                  </div>
                                 </div>
                               </div>
 
@@ -924,7 +986,7 @@
                   <div className="flex items-center justify-between mb-5">
                     <div>
                       <h2 className="text-xl font-black text-slate-900">Mis Turnos</h2>
-                      <p className="text-xs sm:text-sm text-slate-500">Tus reservas activas en MiTurno</p>
+                      <p className="text-xs sm:text-sm text-slate-500">Tus reservas activas y señas abonadas en MiTurno</p>
                     </div>
                     <button type="button" onClick={() => setClientTab('explore')} className="px-4 py-2 rounded-xl bg-[#4F46E5] text-white text-xs sm:text-sm font-bold cursor-pointer">
                       + Nueva reserva
@@ -941,10 +1003,19 @@
                           <div className="flex items-center gap-3.5">
                             {biz && <BusinessAvatar biz={biz} size="sm" />}
                             <div>
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
                                 <span className={`text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${isCancelled ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-900'}`}>
                                   {isCancelled ? 'Cancelado' : 'Confirmado'}
                                 </span>
+                                {bk.paidAmount > 0 ? (
+                                  <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-900">
+                                    Abonado: {formatARS(bk.paidAmount)} ({bk.paymentMethod === 'card' ? 'Tarjeta' : 'Mercado Pago'})
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                    Abona en el local
+                                  </span>
+                                )}
                                 <span className="text-xs font-bold text-slate-500">
                                   {dayObj?.label} ({dayObj?.dateStr}) • {bk.time} hs
                                 </span>
@@ -977,15 +1048,17 @@
                   <div className="flex items-center gap-3.5">
                     <BusinessAvatar biz={managedBiz} size="lg" />
                     <div>
-                      <div className="flex items-center gap-2.5 mb-1">
+                      <div className="flex items-center gap-2.5 flex-wrap mb-1">
                         <span className="text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 text-[#4F46E5] border border-indigo-200">
                           Panel Comercio
                         </span>
-                        <span className="text-xs font-bold text-slate-400">{managedBiz.categoryLabel}</span>
+                        <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200">
+                          MP Conectado • Seña {managedBiz.depositPercent || 50}%
+                        </span>
                       </div>
                       <h1 className="text-xl sm:text-2xl font-black text-slate-900">{managedBiz.name}</h1>
                       <p className="text-xs sm:text-sm text-slate-500">
-                        Enlace activo: <strong className="text-[#4F46E5]">{activeCustomLink}</strong>
+                        Alias cobros: <strong className="text-slate-700">{managedBiz.mpAlias || 'miturno.cobros.mp'}</strong> • Link: <strong className="text-[#4F46E5]">{activeCustomLink}</strong>
                       </p>
                     </div>
                   </div>
@@ -1037,17 +1110,17 @@
                     </div>
                   </div>
                   <div className="bg-[#F8FAFC] rounded-2xl p-4 border border-slate-200 flex items-center gap-3.5">
-                    <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center"><DollarSign className="w-5 h-5" /></div>
+                    <div className="w-11 h-11 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center"><Wallet className="w-5 h-5" /></div>
                     <div>
-                      <p className="text-[11px] font-bold text-slate-500 uppercase">Ingresos estimados</p>
-                      <p className="text-xl font-black text-slate-900">{formatARS(merchantKPIs.revenue)}</p>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase">Cobrado MP / Tarjeta</p>
+                      <p className="text-xl font-black text-sky-900">{formatARS(merchantKPIs.collectedOnline)}</p>
                     </div>
                   </div>
                   <div className="bg-[#F8FAFC] rounded-2xl p-4 border border-slate-200 flex items-center gap-3.5">
-                    <div className="w-11 h-11 rounded-2xl bg-indigo-100 text-[#4F46E5] flex items-center justify-center"><Clock className="w-5 h-5" /></div>
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center"><DollarSign className="w-5 h-5" /></div>
                     <div>
-                      <p className="text-[11px] font-bold text-slate-500 uppercase">Próximo turno</p>
-                      <p className="text-sm font-black text-slate-900">{merchantKPIs.nextSlot}</p>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase">Total proyectado</p>
+                      <p className="text-xl font-black text-slate-900">{formatARS(merchantKPIs.revenue)}</p>
                     </div>
                   </div>
                 </div>
@@ -1104,8 +1177,19 @@
                             {slotBookings.map((bk) => (
                               <div key={bk.id} className="rounded-2xl p-3 border bg-indigo-50/60 border-indigo-200 flex items-center justify-between gap-3">
                                 <div>
-                                  <p className="font-extrabold text-sm text-slate-900">{bk.clientName}</p>
-                                  <p className="text-xs text-slate-600">{bk.serviceName} • {bk.staffName}</p>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <p className="font-extrabold text-sm text-slate-900">{bk.clientName}</p>
+                                    {bk.paidAmount > 0 ? (
+                                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-sky-600 text-white">
+                                        {bk.paymentMethod === 'card' ? 'Pagado Tarjeta' : `Seña MP ${formatARS(bk.paidAmount)}`}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                                        Cobra en local
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-600 mt-0.5">{bk.serviceName} • {bk.staffName}</p>
                                 </div>
                                 {bk.status !== 'cancelled' && (
                                   <div className="flex items-center gap-1">
@@ -1127,7 +1211,7 @@
             </div>
           )}
 
-          {/* MODAL RESERVA */}
+          {/* MODAL RESERVA CON OPCIÓN MERCADO PAGO / TARJETA */}
           {bookingModalBiz && (
             <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
               <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
@@ -1191,14 +1275,14 @@
                           </button>
                         ))}
                       </div>
-                      <button type="button" onClick={() => setBookingStep(3)} className="w-full mt-5 py-3.5 bg-[#4F46E5] text-white font-extrabold rounded-2xl cursor-pointer">Elegir día y hora</button>
+                      <button type="button" onClick={() => setBookingStep(3)} className="w-full mt-5 py-3.5 bg-[#4F46E5] text-white font-extrabold rounded-2xl cursor-pointer">Elegir día, horario y pago</button>
                     </div>
                   )}
 
                   {bookingStep === 3 && (
                     <form onSubmit={handleConfirmClientBooking}>
-                      <h3 className="text-sm font-extrabold mb-3">Paso 3 de 3 — Día, horario y tus datos</h3>
-                      <div className="grid grid-cols-3 gap-2 mb-4">
+                      <h3 className="text-sm font-extrabold mb-3">Paso 3 de 3 — Horario, tus datos y pago</h3>
+                      <div className="grid grid-cols-3 gap-2 mb-3">
                         {DAYS.map((d) => (
                           <button type="button" key={d.id} onClick={() => { setSelectedDay(d.id); setSelectedTime(null); }} className={`py-2 rounded-2xl border text-xs font-bold cursor-pointer ${selectedDay === d.id ? 'bg-[#4F46E5] text-white' : 'bg-white'}`}>
                             {d.label} ({d.dateStr})
@@ -1223,24 +1307,111 @@
                           );
                         })}
                       </div>
-                      <div className="space-y-3 bg-[#F8FAFC] p-3.5 rounded-2xl border">
+
+                      <div className="space-y-2.5 bg-[#F8FAFC] p-3.5 rounded-2xl border mb-4">
                         <input type="text" required value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Tu nombre y apellido *" className="w-full bg-white border rounded-xl px-3.5 py-2 text-sm" />
                         <input type="tel" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="Teléfono / WhatsApp" className="w-full bg-white border rounded-xl px-3.5 py-2 text-sm" />
                       </div>
-                      <button type="submit" disabled={!selectedTime || !clientName.trim()} className="w-full mt-5 py-3.5 bg-[#4F46E5] disabled:bg-slate-300 text-white font-extrabold rounded-2xl cursor-pointer">
-                        {selectedTime ? `Confirmar turno • ${selectedTime} hs` : 'Seleccioná un horario libre'}
+
+                      {/* Selector de método de pago: Mercado Pago / Tarjeta / Local */}
+                      <div className="mb-4">
+                        <p className="text-xs font-extrabold text-slate-800 mb-2">¿Cómo querés abonar tu reserva?</p>
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => setPaymentOption('mercadopago')}
+                            className={`w-full text-left p-3 rounded-2xl border-2 transition flex items-center justify-between cursor-pointer ${
+                              paymentOption === 'mercadopago' ? 'border-sky-500 bg-sky-50/70' : 'border-slate-200 bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-sky-500 text-white flex items-center justify-center font-black text-xs">MP</div>
+                              <div>
+                                <p className="text-xs sm:text-sm font-extrabold text-slate-900">Seña 50% con Mercado Pago</p>
+                                <p className="text-[11px] text-slate-500">Dinero en cuenta o QR • Resto en el local</p>
+                              </div>
+                            </div>
+                            <span className="text-xs sm:text-sm font-black text-sky-700">{formatARS(depositAmountPreview)}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setPaymentOption('card')}
+                            className={`w-full text-left p-3 rounded-2xl border-2 transition flex items-center justify-between cursor-pointer ${
+                              paymentOption === 'card' ? 'border-[#4F46E5] bg-indigo-50/60' : 'border-slate-200 bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-indigo-100 text-[#4F46E5] flex items-center justify-center">
+                                <CreditCard className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <p className="text-xs sm:text-sm font-extrabold text-slate-900">Pago total con Tarjeta (Débito / Crédito)</p>
+                                <p className="text-[11px] text-slate-500">Procesado seguro vía Checkout Mercado Pago</p>
+                              </div>
+                            </div>
+                            <span className="text-xs sm:text-sm font-black text-[#4F46E5]">{formatARS(selectedService?.price || 0)}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setPaymentOption('local')}
+                            className={`w-full text-left p-3 rounded-2xl border-2 transition flex items-center justify-between cursor-pointer ${
+                              paymentOption === 'local' ? 'border-slate-800 bg-slate-100/70' : 'border-slate-200 bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center">
+                                <Store className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <p className="text-xs sm:text-sm font-extrabold text-slate-900">Pagar en el local al asistir</p>
+                                <p className="text-[11px] text-slate-500">Efectivo o transferencia en el mostrador</p>
+                              </div>
+                            </div>
+                            <span className="text-xs font-bold text-slate-600">Sin seña</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={!selectedTime || !clientName.trim() || isProcessingPayment}
+                        className={`w-full py-3.5 text-white font-extrabold rounded-2xl transition cursor-pointer disabled:bg-slate-300 ${
+                          paymentOption === 'mercadopago'
+                            ? 'bg-sky-600 hover:bg-sky-700'
+                            : 'bg-[#4F46E5] hover:bg-indigo-700'
+                        }`}
+                      >
+                        {isProcessingPayment
+                          ? 'Conectando con Mercado Pago...'
+                          : !selectedTime
+                          ? 'Seleccioná un horario libre'
+                          : paymentOption === 'mercadopago'
+                          ? `Pagar seña ${formatARS(depositAmountPreview)} con Mercado Pago`
+                          : paymentOption === 'card'
+                          ? `Pagar ${formatARS(selectedService?.price || 0)} con Tarjeta`
+                          : `Confirmar turno • ${selectedTime} hs`}
                       </button>
                     </form>
                   )}
 
                   {bookingStep === 4 && lastCreatedBooking && (
                     <div className="text-center py-2">
-                      <h3 className="text-lg font-black text-slate-900 mb-2">¡Turno confirmado!</h3>
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 text-xs font-extrabold mb-2">
+                        <ShieldCheck className="w-4 h-4 text-[#10B981]" />
+                        <span>{lastCreatedBooking.paidAmount > 0 ? 'Pago Aprobado • Turno Asegurado' : 'Reserva Confirmada'}</span>
+                      </div>
+                      <h3 className="text-lg font-black text-slate-900 mb-2">¡Listo, te esperamos!</h3>
                       <div className="bg-[#F8FAFC] border rounded-2xl p-4 text-left my-4 text-xs space-y-1.5">
                         <p>✅ <strong>MiTurno</strong> — {bookingModalBiz.name}</p>
                         <p>📅 {DAYS.find((d) => d.id === lastCreatedBooking.day)?.label} a las <strong>{lastCreatedBooking.time} hs</strong></p>
                         <p>✂️ {lastCreatedBooking.serviceName} ({lastCreatedBooking.staffName})</p>
-                        <p>👤 {lastCreatedBooking.clientName} • {formatARS(lastCreatedBooking.price)}</p>
+                        <p>
+                          💳 {lastCreatedBooking.paidAmount > 0
+                            ? `Abonado online: ${formatARS(lastCreatedBooking.paidAmount)} (Resto en local: ${formatARS(lastCreatedBooking.price - lastCreatedBooking.paidAmount)})`
+                            : `Total a abonar en el local: ${formatARS(lastCreatedBooking.price)}`}
+                        </p>
                       </div>
                       <button
                         type="button"
@@ -1251,7 +1422,7 @@
                         }}
                         className="w-full py-3 bg-[#4F46E5] text-white font-extrabold rounded-2xl text-xs cursor-pointer"
                       >
-                        Ver reflejado en Modo Comercio →
+                        Ver pago y turno en Modo Comercio →
                       </button>
                     </div>
                   )}
@@ -1319,7 +1490,6 @@
                   <button type="button" onClick={() => setShowMerchantBrandModal(false)} className="p-1.5"><X className="w-5 h-5" /></button>
                 </div>
 
-                {/* Vista previa tarjeta */}
                 <div className="rounded-2xl overflow-hidden border border-slate-200 mb-4">
                   <div className="h-24 bg-slate-900 relative">
                     {managedBiz.coverUrl && (
@@ -1415,7 +1585,6 @@
                     <input type="text" value={demoNeighborhood} onChange={(e) => setDemoNeighborhood(e.target.value)} placeholder="Barrio / Zona" className="w-full border rounded-xl px-3.5 py-2 text-sm" />
                   </div>
 
-                  {/* Carga de foto de perfil y portada para la demo */}
                   <div className="grid grid-cols-2 gap-3 bg-[#F8FAFC] p-3 rounded-2xl border border-slate-200">
                     <div>
                       <span className="block text-[11px] font-bold text-slate-700 mb-1">Foto de perfil / Logo</span>
