@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MiTurno Comercio — Gestión de Agenda</title>
+  <meta name="description" content="Panel de gestión de turnos en tiempo real para comercios adheridos a MiTurno." />
+  <meta name="theme-color" content="#0F172A" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="MiTurno Pro" />
+  <link rel="icon" type="image/png" href="/miturno-app-nombre.png?v=2" />
+  <link rel="apple-touch-icon" href="/miturno-app-nombre.png?v=2" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-950 text-slate-900 antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef } = React;
+
+    const SUPABASE_URL = "https://nvocbwykxrehnbiwllip.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_RknZJRvKuhL5VFuIqmq6hw_G5G3REzx";
+    const WHATSAPP_SOPORTE = "5492230000000"; // Tu WhatsApp para soporte / altas
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function LucideIcon({ name, className = "w-4 h-4", ...props }) {
+      const ref = useRef(null);
+      useEffect(() => {
+        if (ref.current && window.lucide && window.lucide.icons[name]) {
+          const iconNode = window.lucide.icons[name];
+          const svg = window.lucide.createElement(iconNode);
+          svg.setAttribute("class", className);
+          ref.current.innerHTML = "";
+          ref.current.appendChild(svg);
+        }
+      }, [name, className]);
+      return <span ref={ref} className="inline-flex items-center justify-center shrink-0" {...props} />;
+    }
+
+    function hoyISO() {
+      const d = new Date();
+      const offset = d.getTimezoneOffset();
+      const local = new Date(d.getTime() - offset * 60000);
+      return local.toISOString().split("T")[0];
+    }
+
+    function AppComercio() {
+      const [comercios, setComercios] = useState([]);
+      const [servicios, setServicios] = useState([]);
+      const [turnos, setTurnos] = useState([]);
+      const [cargando, setCargando] = useState(true);
+
+      // Sesión del dueño (recordada en el dispositivo para que funcione como app)
+      const [comercioId, setComercioId] = useState(() => localStorage.getItem("mt_comercio_id") || "");
+      const [pinInput, setPinInput] = useState("");
+      const [autenticado, setAutenticado] = useState(() => localStorage.getItem("mt_auth") === "true");
+
+      // Filtros y pestañas internas del comercio
+      const [tab, setTab] = useState("agenda"); // 'agenda' | 'servicios' | 'config'
+      const [fechaFiltro, setFechaFiltro] = useState(hoyISO());
+
+      // Alta de nuevo servicio desde el local
+      const [servNombre, setServNombre] = useState("");
+      const [servDuracion, setServDuracion] = useState("60");
+      const [servPrecio, setServPrecio] = useState("");
+      const [guardando, setGuardando] = useState(false);
+
+      async function cargarDatos() {
+        try {
+          const [resCom, resSer, resTur] = await Promise.all([
+            supabase.from("comercios").select("*").eq("activo", true).order("nombre", { ascending: true }),
+            supabase.from("servicios").select("*").eq("activo", true),
+            supabase.from("turnos").select("*").neq("estado", "cancelado").order("hora", { ascending: true })
+          ]);
+
+          if (resCom.data) {
+            setComercios(resCom.data);
+            if (!comercioId && resCom.data.length > 0) {
+              setComercioId(resCom.data[0].id);
+            }
+          }
+          if (resSer.data) setServicios(resSer.data);
+          if (resTur.data) setTurnos(resTur.data);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setCargando(false);
+        }
+      }
+
+      useEffect(() => {
+        cargarDatos();
+
+        const canal = supabase
+          .channel("miturno-comercio-app")
+          .on("postgres_changes", { event: "*", schema: "public", table: "turnos" }, () => cargarDatos())
+          .on("postgres_changes", { event: "*", schema: "public", table: "servicios" }, () => cargarDatos())
+          .on("postgres_changes", { event: "*", schema: "public", table: "comercios" }, () => cargarDatos())
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(canal);
+        };
+      }, []);
+
+      const comercioActual = useMemo(
+        () => comercios.find((c) => c.id === comercioId),
+        [comercios, comercioId]
+      );
+
+      const serviciosPropios = useMemo(
+        () => servicios.filter((s) => s.comercio_id === comercioId),
+        [servicios, comercioId]
+      );
+
+      const turnosDelDia = useMemo(
+        () => turnos.filter((t) => t.comercio_id === comercioId && t.fecha === fechaFiltro),
+        [turnos, comercioId, fechaFiltro]
+      );
+
+      const recaudacionEstimada = useMemo(() => {
+        return turnosDelDia.reduce((acc, t) => {
+          const s = serviciosPropios.find((srv) => srv.id === t.servicio_id);
+          return acc + (s ? Number(s.precio) : 0);
+        }, 0);
+      }, [turnosDelDia, serviciosPropios]);
+
+      function iniciarSesion(e) {
+        e.preventDefault();
+        if (!comercioActual) return;
+        if (comercioActual.pin_admin === pinInput.trim()) {
+          setAutenticado(true);
+          localStorage.setItem("mt_comercio_id", comercioActual.id);
+          localStorage.setItem("mt_auth", "true");
+          setPinInput("");
+        } else {
+          alert("PIN incorrecto.");
+        }
+      }
+
+      function cerrarSesion() {
+        setAutenticado(false);
+        localStorage.removeItem("mt_auth");
+      }
+
+      async function liberarTurno(id) {
+        if (!confirm("¿Cancelar este turno y volver a dejar el horario disponible?")) return;
+        const { error } = await supabase.from("turnos").update({ estado: "cancelado" }).eq("id", id);
+        if (error) alert("Error: " + error.message);
+        else await cargarDatos();
+      }
+
+      async function agregarServicio(e) {
+        e.preventDefault();
+        if (!servNombre.trim() || !comercioId) return;
+        setGuardando(true);
+        try {
+          const { error } = await supabase.from("servicios").insert([
+            {
+              comercio_id: comercioId,
+              nombre: servNombre.trim(),
+              duracion_min: Number(servDuracion) || 60,
+              precio: Number(servPrecio) || 0
+            }
+          ]);
+          if (error) throw error;
+          setServNombre("");
+          setServPrecio("");
+          await cargarDatos();
+        } catch (err) {
+          alert("Error al agregar servicio: " + err.message);
+        } finally {
+          setGuardando(false);
+        }
+      }
+
+      async function eliminarServicio(id) {
+        if (!confirm("¿Ocultar este servicio de la agenda?")) return;
+        const { error } = await supabase.from("servicios").update({ activo: false }).eq("id", id);
+        if (error) alert("Error: " + error.message);
+        else await cargarDatos();
+      }
+
+      if (cargando) {
+        return (
+          <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white">
+            <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+            <p className="text-xs text-slate-400">Iniciando MiTurno Comercio...</p>
+          </div>
+        );
+      }
+
+      if (!autenticado || !comercioActual) {
+        return (
+          <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-white rounded-3xl p-7 shadow-xl">
+              <div className="flex items-center gap-3 mb-5">
+                <img src="/miturno-app-nombre.png?v=2" alt="MiTurno" className="w-11 h-11 rounded-2xl object-contain" />
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">
+                    Edición Comercios
+                  </span>
+                  <h1 className="text-xl font-extrabold text-slate-900 leading-tight">MiTurno Pro</h1>
+                </div>
+              </div>
+
+              <form onSubmit={iniciarSesion} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Seleccioná tu comercio</label>
+                  <select
+                    value={comercioId}
+                    onChange={(e) => setComercioId(e.target.value)}
+                    className="w-full px-3.5 py-3 rounded-xl border border-slate-200 text-sm font-medium bg-white"
+                  >
+                    {comercios.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">PIN de acceso</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    required
+                    placeholder="••••"
+                    value={pinInput}
+                    onChange={(e) => setPinInput(e.target.value)}
+                    className="w-full px-3.5 py-3 rounded-xl border border-slate-200 text-sm tracking-widest"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm transition"
+                >
+                  Ingresar a mi agenda
+                </button>
+              </form>
+
+              <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+                <a
+                  href={`https://wa.me/${WHATSAPP_SOPORTE}?text=${encodeURIComponent(
+                    "Hola! Necesito soporte o dar de alta mi local en MiTurno Pro."
+                  )}`}
+                  target="_blank"
+                  className="text-xs font-semibold text-slate-500 hover:text-indigo-600"
+                >
+                  ¿No tenés cuenta o olvidaste tu PIN? Contactar soporte
+                </a>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-[#F8FAFC] flex flex-col pb-20">
+          {/* Header oscuro estilo App Pro */}
+          <header className="bg-slate-900 text-white sticky top-0 z-30">
+            <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <img src="/miturno-app-nombre.png?v=2" alt="MiTurno" className="w-8 h-8 rounded-xl bg-white p-0.5" />
+                <div>
+                  <div className="font-bold text-sm leading-tight">{comercioActual.nombre}</div>
+                  <div className="text-[11px] text-emerald-400 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Sincronizado en vivo
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={cerrarSesion}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300"
+              >
+                Salir
+              </button>
+            </div>
+          </header>
+
+          <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-5">
+            {tab === "agenda" ? (
+              <>
+                {/* Resumen rápido del día */}
+                <div className="grid grid-cols-2 gap-3 mb-5">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200">
+                    <div className="text-xs text-slate-500 font-medium">Turnos del día</div>
+                    <div className="text-2xl font-extrabold text-slate-900 mt-0.5">{turnosDelDia.length}</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200">
+                    <div className="text-xs text-slate-500 font-medium">Ingresos estimados</div>
+                    <div className="text-2xl font-extrabold text-indigo-600 mt-0.5">
+                      ${recaudacionEstimada.toLocaleString("es-AR")}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Selector de fecha */}
+                <div className="bg-white p-3.5 rounded-2xl border border-slate-200 mb-4 flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Fecha de agenda</span>
+                  <input
+                    type="date"
+                    value={fechaFiltro}
+                    onChange={(e) => setFechaFiltro(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800"
+                  />
+                </div>
+
+                {/* Lista de turnos */}
+                {turnosDelDia.length === 0 ? (
+                  <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center">
+                    <p className="text-sm font-medium text-slate-500">No hay turnos agendados para esta fecha.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {turnosDelDia.map((t) => {
+                      const serv = serviciosPropios.find((s) => s.id === t.servicio_id);
+                      return (
+                        <div
+                          key={t.id}
+                          className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center justify-between gap-3 shadow-sm"
+                        >
+                          <div className="flex items-center gap-3.5">
+                            <div className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-extrabold text-sm">
+                              {t.hora.slice(0, 5)}
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm text-slate-900">{t.cliente_nombre}</div>
+                              <div className="text-xs text-slate-500">
+                                {serv ? serv.nombre : "Turno"} · {t.cliente_telefono}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <a
+                              href={`https://wa.me/549${t.cliente_telefono.replace(/\D/g, "")}`}
+                              target="_blank"
+                              className="p-2.5 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              title="Escribir por WhatsApp"
+                            >
+                              <LucideIcon name="message-circle" className="w-4 h-4" />
+                            </a>
+                            <button
+                              onClick={() => liberarTurno(t.id)}
+                              className="p-2.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100"
+                              title="Cancelar y liberar horario"
+                            >
+                              <LucideIcon name="trash-2" className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            ) : (
+              /* Pestaña de Servicios / Canchas del Local */
+              <div className="space-y-5">
+                <div className="bg-white rounded-3xl border border-slate-200 p-5">
+                  <h2 className="font-bold text-base text-slate-900 mb-3">Servicios / Canchas activos</h2>
+                  <div className="space-y-2">
+                    {serviciosPropios.map((s) => (
+                      <div
+                        key={s.id}
+                        className="p-3.5 rounded-2xl bg-slate-50 flex items-center justify-between gap-2 text-sm"
+                      >
+                        <div>
+                          <div className="font-semibold text-slate-900">{s.nombre}</div>
+                          <div className="text-xs text-slate-500">
+                            {s.duracion_min} min · ${Number(s.precio).toLocaleString("es-AR")}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => eliminarServicio(s.id)}
+                          className="text-xs font-semibold text-rose-600 hover:underline"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <form onSubmit={agregarServicio} className="bg-white rounded-3xl border border-slate-200 p-5 space-y-3">
+                  <h3 className="font-bold text-base text-slate-900">Agregar nuevo servicio o cancha</h3>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: Cancha 3 / Corte + Barba"
+                    value={servNombre}
+                    onChange={(e) => setServNombre(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <select
+                      value={servDuracion}
+                      onChange={(e) => setServDuracion(e.target.value)}
+                      className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                    >
+                      <option value="30">30 min</option>
+                      <option value="45">45 min</option>
+                      <option value="60">60 min</option>
+                      <option value="90">90 min</option>
+                    </select>
+                    <input
+                      type="number"
+                      required
+                      placeholder="Precio ($)"
+                      value={servPrecio}
+                      onChange={(e) => setServPrecio(e.target.value)}
+                      className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={guardando}
+                    className="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold text-sm"
+                  >
+                    {guardando ? "Guardando..." : "+ Agregar a mi agenda"}
+                  </button>
+                </form>
+              </div>
+            )}
+          </main>
+
+          {/* Barra inferior estilo App móvil nativa */}
+          <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 h-16 flex items-center justify-around z-30">
+            <button
+              onClick={() => setTab("agenda")}
+              className={`flex flex-col items-center gap-1 text-xs font-bold ${
+                tab === "agenda" ? "text-indigo-600" : "text-slate-400"
+              }`}
+            >
+              <LucideIcon name="calendar-check" className="w-5 h-5" />
+              <span>Agenda</span>
+            </button>
+            <button
+              onClick={() => setTab("servicios")}
+              className={`flex flex-col items-center gap-1 text-xs font-bold ${
+                tab === "servicios" ? "text-indigo-600" : "text-slate-400"
+              }`}
+            >
+              <LucideIcon name="sliders-horizontal" className="w-5 h-5" />
+              <span>Servicios</span>
+            </button>
+          </nav>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<AppComercio />);
+  </script>
+</body>
+</html>
