@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MiTurno — Turnos y Agenda Online</title>
+  <meta name="description" content="Reservá turno en segundos o gestioná la agenda de tu comercio en tiempo real con MiTurno." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-[#F8FAFC] text-slate-900 antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef } = React;
+
+    // Adaptador ligero de íconos Lucide para navegador sin bundler
+    function LucideIcon({ name, className = "w-4 h-4", ...props }) {
+      const ref = useRef(null);
+      useEffect(() => {
+        if (ref.current && window.lucide && window.lucide.icons[name]) {
+          const iconNode = window.lucide.icons[name];
+          const svg = window.lucide.createElement(iconNode);
+          svg.setAttribute("class", className);
+          ref.current.innerHTML = "";
+          ref.current.appendChild(svg);
+        }
+      }, [name, className]);
+      return <span ref={ref} className="inline-flex items-center justify-center shrink-0" {...props} />;
+    }
+
+    const MapPin = (p) => <LucideIcon name="MapPin" {...p} />;
+    const Search = (p) => <LucideIcon name="Search" {...p} />;
+    const Star = (p) => <LucideIcon name="Star" {...p} />;
+    const Clock = (p) => <LucideIcon name="Clock" {...p} />;
+    const Calendar = (p) => <LucideIcon name="Calendar" {...p} />;
+    const Scissors = (p) => <LucideIcon name="Scissors" {...p} />;
+    const Sparkles = (p) => <LucideIcon name="Sparkles" {...p} />;
+    const Trophy = (p) => <LucideIcon name="Trophy" {...p} />;
+    const HeartPulse = (p) => <LucideIcon name="HeartPulse" {...p} />;
+    const LayoutGrid = (p) => <LucideIcon name="LayoutGrid" {...p} />;
+    const ChevronRight = (p) => <LucideIcon name="ChevronRight" {...p} />;
+    const ChevronLeft = (p) => <LucideIcon name="ChevronLeft" {...p} />;
+    const CheckCircle2 = (p) => <LucideIcon name="CheckCircle2" {...p} />;
+    const X = (p) => <LucideIcon name="X" {...p} />;
+    const User = (p) => <LucideIcon name="User" {...p} />;
+    const Store = (p) => <LucideIcon name="Store" {...p} />;
+    const Smartphone = (p) => <LucideIcon name="Smartphone" {...p} />;
+    const Plus = (p) => <LucideIcon name="Plus" {...p} />;
+    const Ban = (p) => <LucideIcon name="Ban" {...p} />;
+    const Trash2 = (p) => <LucideIcon name="Trash2" {...p} />;
+    const Check = (p) => <LucideIcon name="Check" {...p} />;
+    const TrendingUp = (p) => <LucideIcon name="TrendingUp" {...p} />;
+    const Users = (p) => <LucideIcon name="Users" {...p} />;
+    const DollarSign = (p) => <LucideIcon name="DollarSign" {...p} />;
+    const MessageCircle = (p) => <LucideIcon name="MessageCircle" {...p} />;
+    const Sliders = (p) => <LucideIcon name="Sliders" {...p} />;
+    const SlidersHorizontal = (p) => <LucideIcon name="SlidersHorizontal" {...p} />;
+    const Link2 = (p) => <LucideIcon name="Link2" {...p} />;
+    const Copy = (p) => <LucideIcon name="Copy" {...p} />;
+    const ExternalLink = (p) => <LucideIcon name="ExternalLink" {...p} />;
+
+    // --- LOGO OFICIAL MITURNO ---
+    function MiTurnoLogo({ showWordmark = true, size = 'md', onClick = undefined }) {
+      const iconSizes = { sm: 'w-8 h-8', md: 'w-10 h-10', lg: 'w-12 h-12' };
+      const textSizes = { sm: 'text-lg', md: 'text-2xl', lg: 'text-3xl' };
+
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`inline-flex items-center gap-2.5 select-none text-left ${
+            onClick ? 'cursor-pointer group' : 'cursor-default'
+          }`}
+        >
+          <svg
+            viewBox="0 0 100 100"
+            className={`${iconSizes[size] || iconSizes.md} shrink-0 shadow-sm rounded-[22px] transition-transform ${
+              onClick ? 'group-hover:scale-105' : ''
+            }`}
+            aria-label="Logo MiTurno"
+            fill="none"
+          >
+            <rect x="0" y="0" width="100" height="100" rx="24" fill="#4F46E5" />
+            <path d="M 73.5 39.5 A 26 26 0 1 1 63.5 27.8" stroke="#FFFFFF" strokeWidth="5.6" strokeLinecap="round" />
+            <line x1="50" y1="28.5" x2="50" y2="33" stroke="#FFFFFF" strokeWidth="2.8" strokeLinecap="round" />
+            <line x1="50" y1="67" x2="50" y2="71.5" stroke="#FFFFFF" strokeWidth="2.8" strokeLinecap="round" />
+            <line x1="28.5" y1="50" x2="33" y2="50" stroke="#FFFFFF" strokeWidth="2.8" strokeLinecap="round" />
+            <line x1="67" y1="50" x2="71.5" y2="50" stroke="#FFFFFF" strokeWidth="2.8" strokeLinecap="round" />
+            <path d="M 38.5 49.5 L 46.5 57.5 L 70.5 31.5" stroke="#10B981" strokeWidth="6.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {showWordmark && (
+            <span className={`${textSizes[size] || textSizes.md} font-black tracking-tight text-[#4F46E5] leading-none`}>
+              MiTurno
+            </span>
+          )}
+        </button>
+      );
+    }
+
+    const CATEGORIES = [
+      { id: 'all', name: 'Todos', icon: LayoutGrid, staffLabel: 'Profesional' },
+      { id: 'barberia', name: 'Barbería', icon: Scissors, staffLabel: 'Barbero' },
+      { id: 'canchas', name: 'Canchas', icon: Trophy, staffLabel: 'Cancha' },
+      { id: 'estetica', name: 'Estética', icon: Sparkles, staffLabel: 'Especialista' },
+      { id: 'salud', name: 'Salud', icon: HeartPulse, staffLabel: 'Profesional' }
+    ];
+
+    const DAYS = [
+      { id: 'hoy', label: 'Hoy', dateStr: 'Jue 26' },
+      { id: 'manana', label: 'Mañana', dateStr: 'Vie 27' },
+      { id: 'sabado', label: 'Sábado', dateStr: 'Sáb 28' }
+    ];
+
+    const TIME_SLOTS = ['10:00', '11:00', '12:00', '13:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'];
+
+    const INITIAL_BUSINESSES = [
+      {
+        id: 'biz-1',
+        slug: 'barberia-el-clasico',
+        name: 'Barbería El Clásico',
+        category: 'barberia',
+        categoryLabel: 'Barbería',
+        rating: 4.9,
+        reviews: 218,
+        distance: '350 m',
+        neighborhood: 'Centro, Mar del Plata',
+        badge: 'Confirmación al instante',
+        gradient: 'from-[#4F46E5] via-indigo-600 to-slate-900',
+        minPrice: 9500,
+        staffLabel: 'Barbero',
+        staff: [
+          { id: 's1', name: 'Mateo González', role: 'Master Barber' },
+          { id: 's2', name: 'Lucas Fernández', role: 'Estilista & Fade' }
+        ],
+        services: [
+          { id: 'srv-1', name: 'Corte Clásico / Fade', duration: '40 min', price: 9500 },
+          { id: 'srv-2', name: 'Corte + Perfilado de Barba', duration: '60 min', price: 14000 },
+          { id: 'srv-3', name: 'Arreglo de Barba + Toalla Caliente', duration: '30 min', price: 7500 }
+        ]
+      },
+      {
+        id: 'biz-2',
+        slug: 'costa-padel-club',
+        name: 'Costa Pádel Club',
+        category: 'canchas',
+        categoryLabel: 'Canchas',
+        rating: 4.8,
+        reviews: 142,
+        distance: '1.1 km',
+        neighborhood: 'Playa Grande, Mar del Plata',
+        badge: 'Blindex Techadas',
+        gradient: 'from-emerald-600 via-teal-600 to-[#4F46E5]',
+        minPrice: 18000,
+        staffLabel: 'Cancha',
+        staff: [
+          { id: 'c1', name: 'Cancha 1 (Blindex Techada)', role: 'Césped Sintético Pro' },
+          { id: 'c2', name: 'Cancha 2 (Panorámica)', role: 'Iluminación LED' }
+        ],
+        services: [
+          { id: 'srv-4', name: 'Turno Pádel 60 min (4 jug.)', duration: '60 min', price: 18000 },
+          { id: 'srv-5', name: 'Turno Pádel 90 min (4 jug.)', duration: '90 min', price: 25000 }
+        ]
+      },
+      {
+        id: 'biz-3',
+        slug: 'aura-estetica-guemes',
+        name: 'Aura Estética Integral',
+        category: 'estetica',
+        categoryLabel: 'Estética',
+        rating: 4.9,
+        reviews: 164,
+        distance: '800 m',
+        neighborhood: 'Güemes, Mar del Plata',
+        badge: '20% OFF Efectivo',
+        gradient: 'from-[#4F46E5] via-purple-600 to-indigo-700',
+        minPrice: 12500,
+        staffLabel: 'Especialista',
+        staff: [
+          { id: 'e1', name: 'Sofía Martínez', role: 'Cosmiatra' },
+          { id: 'e2', name: 'Valentina Ruiz', role: 'Manicura & Pestañas' }
+        ],
+        services: [
+          { id: 'srv-6', name: 'Esmaltado Semipermanente', duration: '50 min', price: 12500 },
+          { id: 'srv-7', name: 'Limpieza Facial Profunda', duration: '60 min', price: 21000 },
+          { id: 'srv-8', name: 'Lifting de Pestañas + Perfilado', duration: '60 min', price: 16500 }
+        ]
+      },
+      {
+        id: 'biz-4',
+        slug: 'kinesica-centro-salud',
+        name: 'Kinésica Centro Salud',
+        category: 'salud',
+        categoryLabel: 'Salud',
+        rating: 5.0,
+        reviews: 95,
+        distance: '600 m',
+        neighborhood: 'La Perla, Mar del Plata',
+        badge: 'Atención Particular',
+        gradient: 'from-slate-800 via-[#4F46E5] to-indigo-700',
+        minPrice: 15000,
+        staffLabel: 'Profesional',
+        staff: [
+          { id: 'k1', name: 'Lic. Martín Sosa', role: 'Kinesiólogo Deportivo' },
+          { id: 'k2', name: 'Lic. Camila Vega', role: 'Osteopatía & RPG' }
+        ],
+        services: [
+          { id: 'srv-9', name: 'Sesión Kinesiología y Fisioterapia', duration: '45 min', price: 15000 },
+          { id: 'srv-10', name: 'Masaje Descontracturante Deportivo', duration: '50 min', price: 17500 }
+        ]
+      }
+    ];
+
+    const INITIAL_BOOKINGS = [
+      {
+        id: 'bk-101',
+        businessId: 'biz-1',
+        serviceId: 'srv-2',
+        serviceName: 'Corte + Perfilado de Barba',
+        price: 14000,
+        staffId: 's1',
+        staffName: 'Mateo González',
+        day: 'hoy',
+        time: '11:00',
+        clientName: 'Nicolás Gómez',
+        clientPhone: '223 541-8890',
+        status: 'confirmed',
+        source: 'app',
+        isMine: false
+      },
+      {
+        id: 'bk-102',
+        businessId: 'biz-1',
+        serviceId: 'srv-1',
+        serviceName: 'Corte Clásico / Fade',
+        price: 9500,
+        staffId: 's2',
+        staffName: 'Lucas Fernández',
+        day: 'hoy',
+        time: '13:00',
+        clientName: 'Tomás Alvarez',
+        clientPhone: '223 612-3341',
+        status: 'confirmed',
+        source: 'manual',
+        isMine: false
+      },
+      {
+        id: 'bk-103',
+        businessId: 'biz-1',
+        serviceId: 'srv-1',
+        serviceName: 'Corte Clásico / Fade',
+        price: 9500,
+        staffId: 's1',
+        staffName: 'Mateo González',
+        day: 'hoy',
+        time: '16:00',
+        clientName: 'Federico Ríos',
+        clientPhone: '223 498-1122',
+        status: 'confirmed',
+        source: 'app',
+        isMine: true
+      },
+      {
+        id: 'bk-104',
+        businessId: 'biz-2',
+        serviceId: 'srv-4',
+        serviceName: 'Turno Pádel 60 min (4 jug.)',
+        price: 18000,
+        staffId: 'c1',
+        staffName: 'Cancha 1 (Blindex Techada)',
+        day: 'hoy',
+        time: '19:00',
+        clientName: 'Grupo Los Pibes',
+        clientPhone: '223 555-0192',
+        status: 'confirmed',
+        source: 'app',
+        isMine: false
+      },
+      {
+        id: 'bk-105',
+        businessId: 'biz-3',
+        serviceId: 'srv-6',
+        serviceName: 'Esmaltado Semipermanente',
+        price: 12500,
+        staffId: 'e2',
+        staffName: 'Valentina Ruiz',
+        day: 'hoy',
+        time: '15:00',
+        clientName: 'Camila Pereyra',
+        clientPhone: '223 502-7741',
+        status: 'confirmed',
+        source: 'app',
+        isMine: false
+      }
+    ];
+
+    const INITIAL_BLOCKED_SLOTS = [
+      { id: 'blk-1', businessId: 'biz-1', day: 'hoy', time: '12:00', reason: 'Almuerzo del equipo' }
+    ];
+
+    const formatARS = (amount) =>
+      new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount);
+
+    const toSlug = (text) =>
+      text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'tu-local';
+
+    function App() {
+      const [appMode, setAppMode] = useState('client');
+      const [businesses, setBusinesses] = useState(INITIAL_BUSINESSES);
+      const [bookings, setBookings] = useState(INITIAL_BOOKINGS);
+      const [blockedSlots, setBlockedSlots] = useState(INITIAL_BLOCKED_SLOTS);
+
+      const [showCustomizeModal, setShowCustomizeModal] = useState(false);
+      const [demoSlugInput, setDemoSlugInput] = useState('barberia-el-clasico');
+      const [demoBusinessName, setDemoBusinessName] = useState('Barbería El Clásico');
+      const [demoCategory, setDemoCategory] = useState('barberia');
+      const [demoNeighborhood, setDemoNeighborhood] = useState('Centro, Mar del Plata');
+      const [demoServiceName, setDemoServiceName] = useState('Corte + Barba');
+      const [demoServicePrice, setDemoServicePrice] = useState('12500');
+      const [activeCustomLink, setActiveCustomLink] = useState('miturno.com.ar/barberia-el-clasico');
+      const [chipAccentStyle, setChipAccentStyle] = useState('mint');
+
+      const [toast, setToast] = useState(null);
+      const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3500);
+      };
+
+      const [clientTab, setClientTab] = useState('explore');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [selectedCategory, setSelectedCategory] = useState('all');
+      const [onlyAvailableToday, setOnlyAvailableToday] = useState(false);
+
+      const [bookingModalBiz, setBookingModalBiz] = useState(null);
+      const [bookingStep, setBookingStep] = useState(1);
+      const [selectedService, setSelectedService] = useState(null);
+      const [selectedStaff, setSelectedStaff] = useState('any');
+      const [selectedDay, setSelectedDay] = useState('hoy');
+      const [selectedTime, setSelectedTime] = useState(null);
+      const [clientName, setClientName] = useState('');
+      const [clientPhone, setClientPhone] = useState('');
+      const [lastCreatedBooking, setLastCreatedBooking] = useState(null);
+
+      const [managedBizId, setManagedBizId] = useState('biz-1');
+      const [merchantDayFilter, setMerchantDayFilter] = useState('hoy');
+      const [showManualModal, setShowManualModal] = useState(false);
+      const [showBlockModal, setShowBlockModal] = useState(false);
+
+      const [manualServiceId, setManualServiceId] = useState('');
+      const [manualStaffId, setManualStaffId] = useState('');
+      const [manualTime, setManualTime] = useState('10:00');
+      const [manualClientName, setManualClientName] = useState('');
+      const [manualClientPhone, setManualClientPhone] = useState('');
+
+      const [blockTime, setBlockTime] = useState('17:00');
+      const [blockReason, setBlockReason] = useState('Horario reservado / Cerrado');
+
+      const isSlotAvailable = (bizId, day, time, staffId = 'any') => {
+        const isBlocked = blockedSlots.some((b) => b.businessId === bizId && b.day === day && b.time === time);
+        if (isBlocked) return false;
+        const biz = businesses.find((b) => b.id === bizId);
+        if (!biz) return false;
+        const activeAtSlot = bookings.filter((bk) => bk.businessId === bizId && bk.day === day && bk.time === time && bk.status !== 'cancelled');
+        if (staffId && staffId !== 'any') return !activeAtSlot.some((bk) => bk.staffId === staffId);
+        return activeAtSlot.length < biz.staff.length;
+      };
+
+      const getTodayAvailableSlots = (bizId) => TIME_SLOTS.filter((t) => isSlotAvailable(bizId, 'hoy', t, 'any'));
+
+      const filteredBusinesses = useMemo(() => {
+        return businesses.filter((biz) => {
+          const matchesCat = selectedCategory === 'all' || biz.category === selectedCategory;
+          const q = searchQuery.toLowerCase().trim();
+          const matchesQuery =
+            !q ||
+            biz.name.toLowerCase().includes(q) ||
+            biz.categoryLabel.toLowerCase().includes(q) ||
+            biz.neighborhood.toLowerCase().includes(q) ||
+            biz.services.some((s) => s.name.toLowerCase().includes(q));
+          const matchesToday = !onlyAvailableToday || getTodayAvailableSlots(biz.id).length > 0;
+          return matchesCat && matchesQuery && matchesToday;
+        });
+      }, [businesses, selectedCategory, searchQuery, onlyAvailableToday, bookings, blockedSlots]);
+
+      const myBookings = useMemo(() => bookings.filter((b) => b.isMine), [bookings]);
+
+      const openBookingFlow = (biz, preselectedTime = null) => {
+        setBookingModalBiz(biz);
+        setSelectedService(biz.services[0]);
+        setSelectedStaff('any');
+        setSelectedDay('hoy');
+        setSelectedTime(preselectedTime);
+        setBookingStep(preselectedTime ? 3 : 1);
+        setLastCreatedBooking(null);
+      };
+
+      const handleConfirmClientBooking = (e) => {
+        e.preventDefault();
+        if (!bookingModalBiz || !selectedService || !selectedTime || !clientName.trim()) return;
+        let assignedStaff;
+        if (selectedStaff === 'any') {
+          const busyIds = bookings
+            .filter((bk) => bk.businessId === bookingModalBiz.id && bk.day === selectedDay && bk.time === selectedTime && bk.status !== 'cancelled')
+            .map((bk) => bk.staffId);
+          assignedStaff = bookingModalBiz.staff.find((s) => !busyIds.includes(s.id)) || bookingModalBiz.staff[0];
+        } else {
+          assignedStaff = bookingModalBiz.staff.find((s) => s.id === selectedStaff);
+        }
+
+        const newBooking = {
+          id: `bk-${Date.now()}`,
+          businessId: bookingModalBiz.id,
+          serviceId: selectedService.id,
+          serviceName: selectedService.name,
+          price: selectedService.price,
+          staffId: assignedStaff.id,
+          staffName: assignedStaff.name,
+          day: selectedDay,
+          time: selectedTime,
+          clientName: clientName.trim(),
+          clientPhone: clientPhone.trim() || '223 500-0000',
+          status: 'confirmed',
+          source: 'app',
+          isMine: true
+        };
+
+        setBookings((prev) => [newBooking, ...prev]);
+        setLastCreatedBooking(newBooking);
+        setBookingStep(4);
+        showToast(`¡Turno confirmado en ${bookingModalBiz.name}!`);
+      };
+
+      const handleCancelBooking = (bookingId) => {
+        setBookings((prev) => prev.map((bk) => (bk.id === bookingId ? { ...bk, status: 'cancelled' } : bk)));
+        showToast('Turno cancelado. El horario volvió a estar disponible.', 'info');
+      };
+
+      const managedBiz = useMemo(() => businesses.find((b) => b.id === managedBizId) || businesses[0], [businesses, managedBizId]);
+
+      const merchantBookingsForDay = useMemo(
+        () => bookings.filter((b) => b.businessId === managedBiz.id && b.day === merchantDayFilter).sort((a, b) => a.time.localeCompare(b.time)),
+        [bookings, managedBiz.id, merchantDayFilter]
+      );
+
+      const merchantBlockedForDay = useMemo(
+        () => blockedSlots.filter((b) => b.businessId === managedBiz.id && b.day === merchantDayFilter).sort((a, b) => a.time.localeCompare(b.time)),
+        [blockedSlots, managedBiz.id, merchantDayFilter]
+      );
+
+      const merchantKPIs = useMemo(() => {
+        const active = merchantBookingsForDay.filter((b) => b.status !== 'cancelled');
+        const revenue = active.reduce((sum, b) => sum + b.price, 0);
+        const totalCapacity = TIME_SLOTS.length * managedBiz.staff.length;
+        const blockedCapacity = merchantBlockedForDay.length * managedBiz.staff.length;
+        const occupancy = totalCapacity > 0 ? Math.min(100, Math.round(((active.length + blockedCapacity) / totalCapacity) * 100)) : 0;
+        const nextBooking = active.find((b) => b.status === 'confirmed') || null;
+        return {
+          count: active.length,
+          revenue,
+          occupancy,
+          nextSlot: nextBooking ? `${nextBooking.time} hs • ${nextBooking.clientName.split(' ')[0]}` : 'Libre'
+        };
+      }, [merchantBookingsForDay, merchantBlockedForDay, managedBiz.staff.length]);
+
+      const openManualBookingModal = (presetTime = null) => {
+        setManualServiceId(managedBiz.services[0]?.id || '');
+        setManualStaffId(managedBiz.staff[0]?.id || '');
+        const firstFree = presetTime || TIME_SLOTS.find((t) => isSlotAvailable(managedBiz.id, merchantDayFilter, t, 'any')) || '10:00';
+        setManualTime(firstFree);
+        setManualClientName('');
+        setManualClientPhone('');
+        setShowManualModal(true);
+      };
+
+      const handleCreateManualBooking = (e) => {
+        e.preventDefault();
+        if (!manualClientName.trim()) return;
+        const srv = managedBiz.services.find((s) => s.id === manualServiceId) || managedBiz.services[0];
+        const stf = managedBiz.staff.find((s) => s.id === manualStaffId) || managedBiz.staff[0];
+
+        const newBk = {
+          id: `bk-man-${Date.now()}`,
+          businessId: managedBiz.id,
+          serviceId: srv.id,
+          serviceName: srv.name,
+          price: srv.price,
+          staffId: stf.id,
+          staffName: stf.name,
+          day: merchantDayFilter,
+          time: manualTime,
+          clientName: manualClientName.trim(),
+          clientPhone: manualClientPhone.trim() || 'Mostrador / Teléfono',
+          status: 'confirmed',
+          source: 'manual',
+          isMine: false
+        };
+
+        setBookings((prev) => [newBk, ...prev]);
+        setShowManualModal(false);
+        showToast(`Turno manual agregado a las ${newBk.time} hs.`);
+      };
+
+      const handleBlockSlot = (e) => {
+        e.preventDefault();
+        const exists = blockedSlots.some((b) => b.businessId === managedBiz.id && b.day === merchantDayFilter && b.time === blockTime);
+        if (exists) {
+          showToast('Ese horario ya está bloqueado.', 'info');
+          return;
+        }
+        setBlockedSlots((prev) => [
+          ...prev,
+          { id: `blk-${Date.now()}`, businessId: managedBiz.id, day: merchantDayFilter, time: blockTime, reason: blockReason.trim() || 'Bloqueado desde agenda' }
+        ]);
+        setShowBlockModal(false);
+        showToast(`Horario ${blockTime} hs bloqueado en tiempo real.`);
+      };
+
+      const handleUnblockSlot = (blockId) => {
+        setBlockedSlots((prev) => prev.filter((b) => b.id !== blockId));
+        showToast('Horario liberado para reservas.');
+      };
+
+      const handleCompleteBooking = (bookingId) => {
+        setBookings((prev) => prev.map((bk) => (bk.id === bookingId ? { ...bk, status: 'completed' } : bk)));
+        showToast('Turno marcado como atendido.');
+      };
+
+      const previewSlug = toSlug(demoSlugInput || demoBusinessName);
+      const previewFullUrl = `miturno.com.ar/${previewSlug}`;
+
+      const handleApplyDemoCustomization = (e) => {
+        e.preventDefault();
+        const cleanName = demoBusinessName.trim() || 'Mi Comercio Local';
+        const cleanSlug = toSlug(demoSlugInput || cleanName);
+        const catObj = CATEGORIES.find((c) => c.id === demoCategory) || CATEGORIES[1];
+        const priceNum = Math.max(1000, Number(demoServicePrice) || 12000);
+        const srvTitle = demoServiceName.trim() || 'Turno / Servicio Principal';
+
+        const customBiz = {
+          id: `biz-custom-${cleanSlug}`,
+          slug: cleanSlug,
+          name: cleanName,
+          category: catObj.id === 'all' ? 'barberia' : catObj.id,
+          categoryLabel: catObj.id === 'all' ? 'Barbería' : catObj.name,
+          rating: 5.0,
+          reviews: 1,
+          distance: '300 m',
+          neighborhood: demoNeighborhood.trim() || 'Mar del Plata',
+          badge: `Link: miturno.com.ar/${cleanSlug}`,
+          gradient: 'from-[#4F46E5] via-indigo-600 to-[#10B981]',
+          minPrice: priceNum,
+          staffLabel: catObj.id === 'canchas' ? 'Cancha' : 'Profesional',
+          staff: [
+            { id: `st-${cleanSlug}-1`, name: 'Agenda Principal', role: 'Atención Directa' },
+            { id: `st-${cleanSlug}-2`, name: 'Puesto 2', role: 'Disponibilidad en Vivo' }
+          ],
+          services: [
+            { id: `srv-${cleanSlug}-1`, name: srvTitle, duration: '45 min', price: priceNum },
+            { id: `srv-${cleanSlug}-2`, name: `${srvTitle} (Pack Extendido)`, duration: '60 min', price: Math.round(priceNum * 1.35) }
+          ]
+        };
+
+        setBusinesses((prev) => [customBiz, ...prev.filter((b) => b.id !== customBiz.id)]);
+        setManagedBizId(customBiz.id);
+        setActiveCustomLink(`miturno.com.ar/${cleanSlug}`);
+        setSelectedCategory('all');
+        setSearchQuery('');
+        setShowCustomizeModal(false);
+        showToast(`Demo personalizada lista: miturno.com.ar/${cleanSlug}`);
+      };
+
+      const handleCopyDemoLink = () => {
+        const urlToCopy = `https://${previewFullUrl}`;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(urlToCopy).catch(() => {});
+        }
+        showToast(`Enlace copiado: ${previewFullUrl}`);
+      };
+
+      const accentChipClass =
+        chipAccentStyle === 'indigo'
+          ? 'bg-indigo-50 text-[#4F46E5] border-indigo-200 hover:bg-[#4F46E5] hover:text-white'
+          : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-[#10B981] hover:text-slate-950';
+
+      return (
+        <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans pb-16">
+          {toast && (
+            <div className="fixed bottom-5 right-5 z-50 max-w-sm animate-bounce">
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl text-white font-medium text-sm ${toast.type === 'info' ? 'bg-slate-800' : 'bg-[#10B981]'}`}>
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
+                <span>{toast.message}</span>
+              </div>
+            </div>
+          )}
+
+          {/* BARRA SUPERIOR */}
+          <div className="bg-slate-900 text-white px-4 py-2.5 sticky top-0 z-40 shadow-md">
+            <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-300">
+                <span className="inline-flex h-2 w-2 rounded-full bg-[#10B981] animate-pulse"></span>
+                <span className="font-medium text-white">{activeCustomLink}</span>
+                <span className="hidden lg:inline">• Probá sacar un turno y mirá cómo impacta en el local</span>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomizeModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-200 border border-indigo-400/40 transition cursor-pointer"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-[#10B981]" />
+                  <span>Personalizar Demo</span>
+                </button>
+
+                <div className="flex items-center bg-slate-800 p-1 rounded-full border border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setAppMode('client')}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                      appMode === 'client' ? 'bg-[#4F46E5] text-white shadow-sm' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    Modo Cliente
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAppMode('merchant')}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                      appMode === 'merchant' ? 'bg-[#10B981] text-slate-950 shadow-sm' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <Store className="w-3.5 h-3.5" />
+                    Modo Comercio
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {appMode === 'client' && (
+            <div>
+              <header className="bg-[#F8FAFC] border-b border-slate-200/80 pt-4 pb-6 px-4">
+                <div className="max-w-6xl mx-auto">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <MiTurnoLogo
+                        size="md"
+                        showWordmark={true}
+                        onClick={() => {
+                          setClientTab('explore');
+                          setSelectedCategory('all');
+                          setSearchQuery('');
+                        }}
+                      />
+                      <div className="hidden sm:flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700">
+                        <MapPin className="w-3.5 h-3.5 text-[#4F46E5]" />
+                        <span>{demoNeighborhood}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setClientTab('explore')}
+                        className={`px-3.5 py-2 rounded-full text-xs sm:text-sm font-bold transition cursor-pointer ${
+                          clientTab === 'explore' ? 'bg-[#4F46E5] text-white shadow-sm' : 'bg-white text-slate-700 border border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        Explorar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setClientTab('my-bookings')}
+                        className={`relative px-3.5 py-2 rounded-full text-xs sm:text-sm font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          clientTab === 'my-bookings' ? 'bg-[#4F46E5] text-white shadow-sm' : 'bg-white text-slate-700 border border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        <Calendar className="w-4 h-4" />
+                        <span>Mis Turnos</span>
+                        {myBookings.filter((b) => b.status === 'confirmed').length > 0 && (
+                          <span className="bg-[#10B981] text-slate-950 text-[11px] font-black w-5 h-5 rounded-full flex items-center justify-center">
+                            {myBookings.filter((b) => b.status === 'confirmed').length}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {clientTab === 'explore' && (
+                    <div className="relative max-w-2xl">
+                      <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Buscá barbería, cancha de pádel, estética, salud..."
+                        className="w-full bg-white text-slate-900 placeholder-slate-400 pl-12 pr-10 py-3.5 rounded-2xl border border-slate-200 shadow-sm text-sm sm:text-base focus:outline-none focus:border-[#4F46E5]"
+                      />
+                      {searchQuery && (
+                        <button type="button" onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 p-1">
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </header>
+
+              {clientTab === 'explore' ? (
+                <main className="max-w-6xl mx-auto px-4 pt-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                      {CATEGORIES.map((cat) => {
+                        const Icon = cat.icon;
+                        const active = selectedCategory === cat.id;
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setSelectedCategory(cat.id)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-bold shrink-0 border transition cursor-pointer ${
+                              active ? 'bg-[#4F46E5] text-white border-[#4F46E5]' : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                            }`}
+                          >
+                            <Icon className="w-4 h-4" />
+                            <span>{cat.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setOnlyAvailableToday((v) => !v)}
+                      className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition w-fit cursor-pointer ${
+                        onlyAvailableToday ? 'bg-[#10B981] text-slate-950 border-[#10B981]' : 'bg-white text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${onlyAvailableToday ? 'bg-slate-950' : 'bg-[#10B981]'}`} />
+                      <span>Disponibles hoy</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {filteredBusinesses.map((biz) => {
+                      const catObj = CATEGORIES.find((c) => c.id === biz.category) || CATEGORIES[1];
+                      const CatIcon = catObj.icon;
+                      const todaySlots = getTodayAvailableSlots(biz.id);
+
+                      return (
+                        <article key={biz.id} className="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition overflow-hidden flex flex-col justify-between">
+                          <div>
+                            <div className={`bg-gradient-to-r ${biz.gradient} px-5 py-4 text-white flex items-center justify-between gap-2`}>
+                              <span className="text-[11px] font-extrabold bg-white/20 px-2.5 py-1 rounded-full">{biz.badge}</span>
+                              <div className="flex items-center gap-1 bg-black/25 px-2.5 py-1 rounded-full text-xs font-extrabold">
+                                <Star className="w-3.5 h-3.5 text-[#10B981]" />
+                                <span>{biz.rating.toFixed(1)}</span>
+                              </div>
+                            </div>
+
+                            <div className="p-4">
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <h2 className="text-lg font-extrabold text-slate-900">{biz.name}</h2>
+                                  <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                                    <CatIcon className="w-3.5 h-3.5 text-[#4F46E5]" />
+                                    <span>{biz.categoryLabel}</span>
+                                    <span>•</span>
+                                    <span>{biz.neighborhood}</span>
+                                  </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="text-[11px] text-slate-400 block">Desde</span>
+                                  <span className="text-sm font-black text-[#4F46E5]">{formatARS(biz.minPrice)}</span>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 pt-3 border-t border-slate-100">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1 mb-2">
+                                  <Clock className="w-3.5 h-3.5 text-[#10B981]" />
+                                  {todaySlots.length > 0 ? `Horarios libres hoy (${todaySlots.length})` : 'Sin turnos libres hoy'}
+                                </span>
+
+                                {todaySlots.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {todaySlots.slice(0, 4).map((slot) => (
+                                      <button
+                                        type="button"
+                                        key={slot}
+                                        onClick={() => openBookingFlow(biz, slot)}
+                                        className={`px-2.5 py-1.5 rounded-xl text-xs font-extrabold border transition cursor-pointer ${accentChipClass}`}
+                                      >
+                                        {slot}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-slate-400 py-1">Consultá disponibilidad para mañana o el sábado.</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="px-4 pb-4">
+                            <button
+                              type="button"
+                              onClick={() => openBookingFlow(biz)}
+                              className="w-full py-2.5 rounded-2xl bg-[#4F46E5] hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm transition cursor-pointer"
+                            >
+                              Reservar turno
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </main>
+              ) : (
+                <main className="max-w-3xl mx-auto px-4 pt-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <div>
+                      <h2 className="text-xl font-black text-slate-900">Mis Turnos</h2>
+                      <p className="text-xs sm:text-sm text-slate-500">Tus reservas activas en MiTurno</p>
+                    </div>
+                    <button type="button" onClick={() => setClientTab('explore')} className="px-4 py-2 rounded-xl bg-[#4F46E5] text-white text-xs sm:text-sm font-bold cursor-pointer">
+                      + Nueva reserva
+                    </button>
+                  </div>
+
+                  <div className="space-y-3.5">
+                    {myBookings.map((bk) => {
+                      const biz = businesses.find((b) => b.id === bk.businessId);
+                      const dayObj = DAYS.find((d) => d.id === bk.day);
+                      const isCancelled = bk.status === 'cancelled';
+                      return (
+                        <div key={bk.id} className={`bg-white rounded-3xl p-4 sm:p-5 border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isCancelled ? 'opacity-65' : ''}`}>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${isCancelled ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-900'}`}>
+                                {isCancelled ? 'Cancelado' : 'Confirmado'}
+                              </span>
+                              <span className="text-xs font-bold text-slate-500">
+                                {dayObj?.label} ({dayObj?.dateStr}) • {bk.time} hs
+                              </span>
+                            </div>
+                            <h3 className="text-base font-extrabold text-slate-900">{biz?.name || 'Comercio'}</h3>
+                            <p className="text-xs sm:text-sm text-slate-600">{bk.serviceName} — {bk.staffName}</p>
+                          </div>
+                          <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2">
+                            <span className="text-base font-black text-slate-900">{formatARS(bk.price)}</span>
+                            {!isCancelled && (
+                              <button type="button" onClick={() => handleCancelBooking(bk.id)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 cursor-pointer">
+                                Cancelar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </main>
+              )}
+            </div>
+          )}
+
+          {appMode === 'merchant' && (
+            <div className="max-w-6xl mx-auto px-4 pt-6">
+              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm mb-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <MiTurnoLogo size="sm" showWordmark={true} />
+                      <span className="text-[11px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-indigo-50 text-[#4F46E5] border border-indigo-200">
+                        Panel Comercio
+                      </span>
+                    </div>
+                    <h1 className="text-2xl font-black text-slate-900">Agenda en Tiempo Real</h1>
+                    <p className="text-sm text-slate-500">
+                      Enlace activo: <strong className="text-[#4F46E5]">{activeCustomLink}</strong>
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <select
+                      value={managedBizId}
+                      onChange={(e) => setManagedBizId(e.target.value)}
+                      className="bg-[#F8FAFC] border border-slate-300 text-slate-900 font-bold text-xs sm:text-sm rounded-2xl px-3.5 py-2.5"
+                    >
+                      {businesses.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomizeModal(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-indigo-50 text-[#4F46E5] font-bold text-xs sm:text-sm cursor-pointer"
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                      <span>Editar enlace/marca</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-6 pt-5 border-t border-slate-100">
+                  <div className="bg-[#F8FAFC] rounded-2xl p-4 border border-slate-200 flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-2xl bg-indigo-100 text-[#4F46E5] flex items-center justify-center"><Users className="w-5 h-5" /></div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase">Turnos hoy</p>
+                      <p className="text-xl font-black text-slate-900">{merchantKPIs.count}</p>
+                    </div>
+                  </div>
+                  <div className="bg-[#F8FAFC] rounded-2xl p-4 border border-slate-200 flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center"><TrendingUp className="w-5 h-5" /></div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase">Ocupación</p>
+                      <p className="text-xl font-black text-slate-900">{merchantKPIs.occupancy}%</p>
+                    </div>
+                  </div>
+                  <div className="bg-[#F8FAFC] rounded-2xl p-4 border border-slate-200 flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center"><DollarSign className="w-5 h-5" /></div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase">Ingresos estimados</p>
+                      <p className="text-xl font-black text-slate-900">{formatARS(merchantKPIs.revenue)}</p>
+                    </div>
+                  </div>
+                  <div className="bg-[#F8FAFC] rounded-2xl p-4 border border-slate-200 flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-2xl bg-indigo-100 text-[#4F46E5] flex items-center justify-center"><Clock className="w-5 h-5" /></div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase">Próximo turno</p>
+                      <p className="text-sm font-black text-slate-900">{merchantKPIs.nextSlot}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 w-fit">
+                  {DAYS.map((d) => (
+                    <button
+                      type="button"
+                      key={d.id}
+                      onClick={() => setMerchantDayFilter(d.id)}
+                      className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold cursor-pointer ${
+                        merchantDayFilter === d.id ? 'bg-[#4F46E5] text-white' : 'text-slate-600'
+                      }`}
+                    >
+                      {d.label} ({d.dateStr})
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <button type="button" onClick={() => setShowBlockModal(true)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-white border border-slate-300 text-slate-800 font-bold text-xs sm:text-sm cursor-pointer">
+                    <Ban className="w-4 h-4" />
+                    <span>Bloquear horario</span>
+                  </button>
+                  <button type="button" onClick={() => openManualBookingModal()} className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-[#4F46E5] text-white font-bold text-xs sm:text-sm cursor-pointer">
+                    <Plus className="w-4 h-4" />
+                    <span>Turno manual</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+                {TIME_SLOTS.map((slot) => {
+                  const slotBookings = merchantBookingsForDay.filter((b) => b.time === slot);
+                  const slotBlock = merchantBlockedForDay.find((b) => b.time === slot);
+                  return (
+                    <div key={slot} className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                      <div className="w-20 shrink-0 font-black text-slate-800 text-sm">{slot} hs</div>
+                      <div className="flex-1">
+                        {slotBlock ? (
+                          <div className="flex items-center justify-between bg-slate-200/80 rounded-2xl px-4 py-2.5">
+                            <span className="text-xs sm:text-sm font-bold text-slate-800">Bloqueado — {slotBlock.reason}</span>
+                            <button type="button" onClick={() => handleUnblockSlot(slotBlock.id)} className="text-xs font-extrabold text-[#4F46E5] cursor-pointer">Desbloquear</button>
+                          </div>
+                        ) : slotBookings.length === 0 ? (
+                          <div className="flex items-center justify-between text-xs py-1">
+                            <span className="font-semibold text-emerald-700">Horario libre para reservar</span>
+                            <button type="button" onClick={() => openManualBookingModal(slot)} className="text-slate-500 hover:text-[#4F46E5] font-bold cursor-pointer">+ Cargar turno acá</button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                            {slotBookings.map((bk) => (
+                              <div key={bk.id} className="rounded-2xl p-3 border bg-indigo-50/60 border-indigo-200 flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="font-extrabold text-sm text-slate-900">{bk.clientName}</p>
+                                  <p className="text-xs text-slate-600">{bk.serviceName} • {bk.staffName}</p>
+                                </div>
+                                {bk.status !== 'cancelled' && (
+                                  <div className="flex items-center gap-1">
+                                    {bk.status !== 'completed' && (
+                                      <button type="button" onClick={() => handleCompleteBooking(bk.id)} className="p-2 rounded-xl bg-[#10B981] text-slate-950 cursor-pointer"><Check className="w-4 h-4" /></button>
+                                    )}
+                                    <button type="button" onClick={() => handleCancelBooking(bk.id)} className="p-2 rounded-xl bg-white border border-slate-200 text-red-600 cursor-pointer"><Trash2 className="w-4 h-4" /></button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* MODAL RESERVA */}
+          {bookingModalBiz && (
+            <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
+              <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+                <div className={`bg-gradient-to-r ${bookingModalBiz.gradient} p-5 text-white relative`}>
+                  <button type="button" onClick={() => setBookingModalBiz(null)} className="absolute right-4 top-4 bg-black/25 p-2 rounded-full text-white cursor-pointer"><X className="w-5 h-5" /></button>
+                  <span className="text-xs font-bold bg-white/20 px-2.5 py-0.5 rounded-full">{bookingModalBiz.categoryLabel}</span>
+                  <h2 className="text-xl font-black mt-1.5">{bookingModalBiz.name}</h2>
+                </div>
+
+                <div className="p-5 overflow-y-auto flex-1">
+                  {bookingStep === 1 && (
+                    <div>
+                      <h3 className="text-sm font-extrabold mb-3">Paso 1 de 3 — Elegí un servicio</h3>
+                      <div className="space-y-2.5">
+                        {bookingModalBiz.services.map((srv) => (
+                          <button
+                            type="button"
+                            key={srv.id}
+                            onClick={() => setSelectedService(srv)}
+                            className={`w-full text-left p-3.5 rounded-2xl border-2 flex justify-between cursor-pointer ${
+                              selectedService?.id === srv.id ? 'border-[#4F46E5] bg-indigo-50/50' : 'border-slate-200'
+                            }`}
+                          >
+                            <div>
+                              <p className="font-bold text-sm">{srv.name}</p>
+                              <p className="text-xs text-slate-500">{srv.duration}</p>
+                            </div>
+                            <span className="font-black text-sm">{formatARS(srv.price)}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <button type="button" onClick={() => setBookingStep(2)} className="w-full mt-5 py-3.5 bg-[#4F46E5] text-white font-extrabold rounded-2xl cursor-pointer">Continuar</button>
+                    </div>
+                  )}
+
+                  {bookingStep === 2 && (
+                    <div>
+                      <h3 className="text-sm font-extrabold mb-3">Paso 2 de 3 — Elegí {bookingModalBiz.staffLabel.toLowerCase()}</h3>
+                      <div className="space-y-2.5">
+                        <button type="button" onClick={() => setSelectedStaff('any')} className={`w-full text-left p-3.5 rounded-2xl border-2 cursor-pointer ${selectedStaff === 'any' ? 'border-[#4F46E5] bg-indigo-50/50' : 'border-slate-200'}`}>
+                          <p className="font-bold text-sm">Cualquiera disponible</p>
+                        </button>
+                        {bookingModalBiz.staff.map((st) => (
+                          <button type="button" key={st.id} onClick={() => setSelectedStaff(st.id)} className={`w-full text-left p-3.5 rounded-2xl border-2 cursor-pointer ${selectedStaff === st.id ? 'border-[#4F46E5] bg-indigo-50/50' : 'border-slate-200'}`}>
+                            <p className="font-bold text-sm">{st.name}</p>
+                            <p className="text-xs text-slate-500">{st.role}</p>
+                          </button>
+                        ))}
+                      </div>
+                      <button type="button" onClick={() => setBookingStep(3)} className="w-full mt-5 py-3.5 bg-[#4F46E5] text-white font-extrabold rounded-2xl cursor-pointer">Elegir día y hora</button>
+                    </div>
+                  )}
+
+                  {bookingStep === 3 && (
+                    <form onSubmit={handleConfirmClientBooking}>
+                      <h3 className="text-sm font-extrabold mb-3">Paso 3 de 3 — Día, horario y tus datos</h3>
+                      <div className="grid grid-cols-3 gap-2 mb-4">
+                        {DAYS.map((d) => (
+                          <button type="button" key={d.id} onClick={() => { setSelectedDay(d.id); setSelectedTime(null); }} className={`py-2 rounded-2xl border text-xs font-bold cursor-pointer ${selectedDay === d.id ? 'bg-[#4F46E5] text-white' : 'bg-white'}`}>
+                            {d.label} ({d.dateStr})
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 mb-4">
+                        {TIME_SLOTS.map((slot) => {
+                          const available = isSlotAvailable(bookingModalBiz.id, selectedDay, slot, selectedStaff);
+                          return (
+                            <button
+                              type="button"
+                              key={slot}
+                              disabled={!available}
+                              onClick={() => setSelectedTime(slot)}
+                              className={`py-2 rounded-xl text-xs font-extrabold ${
+                                !available ? 'bg-slate-100 text-slate-300 line-through' : selectedTime === slot ? 'bg-[#10B981] text-slate-950' : 'bg-emerald-50 text-emerald-900 border border-emerald-200 cursor-pointer'
+                              }`}
+                            >
+                              {slot}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="space-y-3 bg-[#F8FAFC] p-3.5 rounded-2xl border">
+                        <input type="text" required value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Tu nombre y apellido *" className="w-full bg-white border rounded-xl px-3.5 py-2 text-sm" />
+                        <input type="tel" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="Teléfono / WhatsApp" className="w-full bg-white border rounded-xl px-3.5 py-2 text-sm" />
+                      </div>
+                      <button type="submit" disabled={!selectedTime || !clientName.trim()} className="w-full mt-5 py-3.5 bg-[#4F46E5] disabled:bg-slate-300 text-white font-extrabold rounded-2xl cursor-pointer">
+                        {selectedTime ? `Confirmar turno • ${selectedTime} hs` : 'Seleccioná un horario libre'}
+                      </button>
+                    </form>
+                  )}
+
+                  {bookingStep === 4 && lastCreatedBooking && (
+                    <div className="text-center py-2">
+                      <h3 className="text-lg font-black text-slate-900 mb-2">¡Turno confirmado!</h3>
+                      <div className="bg-[#F8FAFC] border rounded-2xl p-4 text-left my-4 text-xs space-y-1.5">
+                        <p>✅ <strong>MiTurno</strong> — {bookingModalBiz.name}</p>
+                        <p>📅 {DAYS.find((d) => d.id === lastCreatedBooking.day)?.label} a las <strong>{lastCreatedBooking.time} hs</strong></p>
+                        <p>✂️ {lastCreatedBooking.serviceName} ({lastCreatedBooking.staffName})</p>
+                        <p>👤 {lastCreatedBooking.clientName} • {formatARS(lastCreatedBooking.price)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBookingModalBiz(null);
+                          setManagedBizId(bookingModalBiz.id);
+                          setAppMode('merchant');
+                        }}
+                        className="w-full py-3 bg-[#4F46E5] text-white font-extrabold rounded-2xl text-xs cursor-pointer"
+                      >
+                        Ver reflejado en Modo Comercio →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL TURNO MANUAL */}
+          {showManualModal && (
+            <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-black">Agregar Turno Manual</h3>
+                  <button type="button" onClick={() => setShowManualModal(false)} className="p-1.5"><X className="w-5 h-5" /></button>
+                </div>
+                <form onSubmit={handleCreateManualBooking} className="space-y-3.5">
+                  <select value={manualServiceId} onChange={(e) => setManualServiceId(e.target.value)} className="w-full border rounded-xl px-3 py-2 text-sm">
+                    {managedBiz.services.map((s) => <option key={s.id} value={s.id}>{s.name} ({formatARS(s.price)})</option>)}
+                  </select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <select value={manualStaffId} onChange={(e) => setManualStaffId(e.target.value)} className="w-full border rounded-xl px-3 py-2 text-sm">
+                      {managedBiz.staff.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+                    </select>
+                    <select value={manualTime} onChange={(e) => setManualTime(e.target.value)} className="w-full border rounded-xl px-3 py-2 text-sm">
+                      {TIME_SLOTS.map((t) => <option key={t} value={t}>{t} hs</option>)}
+                    </select>
+                  </div>
+                  <input type="text" required value={manualClientName} onChange={(e) => setManualClientName(e.target.value)} placeholder="Nombre del cliente *" className="w-full border rounded-xl px-3.5 py-2 text-sm" />
+                  <input type="text" value={manualClientPhone} onChange={(e) => setManualClientPhone(e.target.value)} placeholder="Teléfono (opcional)" className="w-full border rounded-xl px-3.5 py-2 text-sm" />
+                  <button type="submit" className="w-full py-3 bg-[#4F46E5] text-white font-extrabold rounded-2xl text-sm cursor-pointer">Guardar en agenda</button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL BLOQUEAR */}
+          {showBlockModal && (
+            <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-black">Bloquear Horario</h3>
+                  <button type="button" onClick={() => setShowBlockModal(false)} className="p-1.5"><X className="w-5 h-5" /></button>
+                </div>
+                <form onSubmit={handleBlockSlot} className="space-y-4">
+                  <select value={blockTime} onChange={(e) => setBlockTime(e.target.value)} className="w-full border rounded-xl px-3 py-2 text-sm font-bold">
+                    {TIME_SLOTS.map((t) => <option key={t} value={t}>{t} hs</option>)}
+                  </select>
+                  <input type="text" value={blockReason} onChange={(e) => setBlockReason(e.target.value)} placeholder="Motivo" className="w-full border rounded-xl px-3.5 py-2 text-sm" />
+                  <button type="submit" className="w-full py-3 bg-[#10B981] text-slate-950 font-extrabold rounded-2xl text-sm cursor-pointer">Bloquear horario</button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL PERSONALIZAR DEMO */}
+          {showCustomizeModal && (
+            <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border max-h-[92vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-black">Personalizar Demo</h3>
+                  <button type="button" onClick={() => setShowCustomizeModal(false)} className="p-1.5"><X className="w-5 h-5" /></button>
+                </div>
+
+                <div className="bg-[#F8FAFC] border border-indigo-200 rounded-2xl p-3.5 mb-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-extrabold text-[#4F46E5]">Vista previa del enlace</span>
+                    <button type="button" onClick={handleCopyDemoLink} className="text-xs font-bold text-[#4F46E5] bg-indigo-50 px-2.5 py-1 rounded-lg cursor-pointer">Copiar link</button>
+                  </div>
+                  <div className="font-mono text-xs sm:text-sm font-bold bg-white border rounded-xl px-3 py-2">{previewFullUrl}</div>
+                </div>
+
+                <form onSubmit={handleApplyDemoCustomization} className="space-y-3.5">
+                  <input type="text" required value={demoBusinessName} onChange={(e) => { setDemoBusinessName(e.target.value); setDemoSlugInput(toSlug(e.target.value)); }} placeholder="Nombre del comercio *" className="w-full border rounded-xl px-3.5 py-2 text-sm" />
+                  <input type="text" value={demoSlugInput} onChange={(e) => setDemoSlugInput(toSlug(e.target.value))} placeholder="Slug del enlace" className="w-full border rounded-xl px-3.5 py-2 text-sm font-mono" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <select value={demoCategory} onChange={(e) => setDemoCategory(e.target.value)} className="w-full border rounded-xl px-3 py-2 text-sm">
+                      {CATEGORIES.filter((c) => c.id !== 'all').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <input type="text" value={demoNeighborhood} onChange={(e) => setDemoNeighborhood(e.target.value)} placeholder="Barrio / Zona" className="w-full border rounded-xl px-3.5 py-2 text-sm" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input type="text" value={demoServiceName} onChange={(e) => setDemoServiceName(e.target.value)} placeholder="Servicio principal" className="w-full border rounded-xl px-3.5 py-2 text-sm" />
+                    <input type="number" value={demoServicePrice} onChange={(e) => setDemoServicePrice(e.target.value)} placeholder="Precio" className="w-full border rounded-xl px-3.5 py-2 text-sm" />
+                  </div>
+                  <button type="submit" className="w-full py-3.5 bg-[#4F46E5] text-white font-extrabold rounded-2xl text-sm cursor-pointer">
+                    Aplicar y abrir demo
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
