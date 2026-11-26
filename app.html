@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MiTurno App — Agenda Online en Vivo</title>
+  <meta name="description" content="Reservá turno en segundos o gestioná la agenda de tu comercio en tiempo real con MiTurno." />
+  <meta name="theme-color" content="#4F46E5" />
+  <link rel="icon" type="image/png" href="/miturno-app-nombre.png?v=2" />
+  <link rel="apple-touch-icon" href="/miturno-app-nombre.png?v=2" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-[#F8FAFC] text-slate-900 antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef } = React;
+
+    const SUPABASE_URL = "https://nvocbwykxrehnbiwllip.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_RknZJRvKuhL5VFuIqmq6hw_G5G3REzx";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function LucideIcon({ name, className = "w-4 h-4", ...props }) {
+      const ref = useRef(null);
+      useEffect(() => {
+        if (ref.current && window.lucide && window.lucide.icons[name]) {
+          const iconNode = window.lucide.icons[name];
+          const svg = window.lucide.createElement(iconNode);
+          svg.setAttribute("class", className);
+          ref.current.innerHTML = "";
+          ref.current.appendChild(svg);
+        }
+      }, [name, className]);
+      return <span ref={ref} className="inline-flex items-center justify-center shrink-0" {...props} />;
+    }
+
+    function generarSlots(horaApertura, horaCierre, duracionMin) {
+      const slots = [];
+      const [hIni, mIni] = (horaApertura || "09:00").split(":").map(Number);
+      const [hFin, mFin] = (horaCierre || "21:00").split(":").map(Number);
+      let actual = hIni * 60 + mIni;
+      const limite = hFin * 60 + mFin;
+      const paso = duracionMin || 60;
+
+      while (actual + paso <= limite) {
+        const hh = String(Math.floor(actual / 60)).padStart(2, "0");
+        const mm = String(actual % 60).padStart(2, "0");
+        slots.push(`${hh}:${mm}`);
+        actual += paso;
+      }
+      return slots;
+    }
+
+    function hoyISO() {
+      const d = new Date();
+      const offset = d.getTimezoneOffset();
+      const local = new Date(d.getTime() - offset * 60000);
+      return local.toISOString().split("T")[0];
+    }
+
+    function App() {
+      const [vista, setVista] = useState("cliente");
+      const [comercios, setComercios] = useState([]);
+      const [servicios, setServicios] = useState([]);
+      const [turnos, setTurnos] = useState([]);
+      const [cargando, setCargando] = useState(true);
+      const [errorMsg, setErrorMsg] = useState("");
+
+      const [rubroFiltro, setRubroFiltro] = useState("Todos");
+      const [busqueda, setBusqueda] = useState("");
+      const [comercioActivo, setComercioActivo] = useState(null);
+      const [servicioId, setServicioId] = useState("");
+      const [fecha, setFecha] = useState(hoyISO());
+      const [horaSel, setHoraSel] = useState("");
+      const [clienteNombre, setClienteNombre] = useState("");
+      const [clienteTelefono, setClienteTelefono] = useState("");
+      const [enviando, setEnviando] = useState(false);
+      const [reservaExitosa, setReservaExitosa] = useState(null);
+
+      const [comercioAdminId, setComercioAdminId] = useState("");
+      const [pinIngresado, setPinIngresado] = useState("");
+      const [adminAutenticado, setAdminAutenticado] = useState(false);
+      const [fechaAdmin, setFechaAdmin] = useState(hoyISO());
+
+      const [nuevoNombre, setNuevoNombre] = useState("");
+      const [nuevoRubro, setNuevoRubro] = useState("Barbería");
+      const [nuevaDireccion, setNuevaDireccion] = useState("");
+      const [nuevoTelefono, setNuevoTelefono] = useState("");
+      const [nuevoPin, setNuevoPin] = useState("1234");
+      const [nuevoServicioNombre, setNuevoServicioNombre] = useState("");
+      const [nuevoServicioPrecio, setNuevoServicioPrecio] = useState("10000");
+
+      async function cargarTodo() {
+        setCargando(true);
+        setErrorMsg("");
+        try {
+          const [resCom, resSer, resTur] = await Promise.all([
+            supabase.from("comercios").select("*").eq("activo", true).order("creado_en", { ascending: true }),
+            supabase.from("servicios").select("*").eq("activo", true),
+            supabase.from("turnos").select("*").neq("estado", "cancelado").order("hora", { ascending: true })
+          ]);
+
+          if (resCom.error) throw resCom.error;
+          if (resSer.error) throw resSer.error;
+          if (resTur.error) throw resTur.error;
+
+          setComercios(resCom.data || []);
+          setServicios(resSer.data || []);
+          setTurnos(resTur.data || []);
+
+          if (resCom.data && resCom.data.length > 0 && !comercioAdminId) {
+            setComercioAdminId(resCom.data[0].id);
+          }
+        } catch (err) {
+          console.error(err);
+          setErrorMsg("No se pudo conectar con Supabase. Verificá que hayas ejecutado el script SQL de tablas.");
+        } finally {
+          setCargando(false);
+        }
+      }
+
+      useEffect(() => {
+        cargarTodo();
+
+        const canal = supabase
+          .channel("miturno-realtime")
+          .on("postgres_changes", { event: "*", schema: "public", table: "turnos" }, () => cargarTodo())
+          .on("postgres_changes", { event: "*", schema: "public", table: "comercios" }, () => cargarTodo())
+          .on("postgres_changes", { event: "*", schema: "public", table: "servicios" }, () => cargarTodo())
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(canal);
+        };
+      }, []);
+
+      const rubros = useMemo(() => {
+        const unicos = Array.from(new Set(comercios.map((c) => c.rubro)));
+        return ["Todos", ...unicos];
+      }, [comercios]);
+
+      const comerciosFiltrados = useMemo(() => {
+        return comercios.filter((c) => {
+          const matchRubro = rubroFiltro === "Todos" || c.rubro === rubroFiltro;
+          const matchText =
+            c.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+            (c.direccion || "").toLowerCase().includes(busqueda.toLowerCase());
+          return matchRubro && matchText;
+        });
+      }, [comercios, rubroFiltro, busqueda]);
+
+      const serviciosDelComercio = useMemo(() => {
+        if (!comercioActivo) return [];
+        return servicios.filter((s) => s.comercio_id === comercioActivo.id);
+      }, [servicios, comercioActivo]);
+
+      useEffect(() => {
+        if (serviciosDelComercio.length > 0) {
+          setServicioId(serviciosDelComercio[0].id);
+        } else {
+          setServicioId("");
+        }
+        setHoraSel("");
+      }, [comercioActivo, serviciosDelComercio]);
+
+      const slotsDisponibles = useMemo(() => {
+        if (!comercioActivo) return [];
+        const servObj = serviciosDelComercio.find((s) => s.id === servicioId);
+        const dur = servObj ? servObj.duracion_min : comercioActivo.duracion_turno_min;
+        const todos = generarSlots(comercioActivo.hora_apertura, comercioActivo.hora_cierre, dur);
+
+        const ocupados = turnos
+          .filter(
+            (t) =>
+              t.comercio_id === comercioActivo.id &&
+              t.fecha === fecha &&
+              (!servicioId || t.servicio_id === servicioId)
+          )
+          .map((t) => t.hora.slice(0, 5));
+
+        return todos.map((h) => ({ hora: h, ocupado: ocupados.includes(h) }));
+      }, [comercioActivo, servicioId, serviciosDelComercio, turnos, fecha]);
+
+      async function confirmarReserva(e) {
+        e.preventDefault();
+        if (!comercioActivo || !horaSel || !clienteNombre.trim() || !clienteTelefono.trim()) return;
+        setEnviando(true);
+        try {
+          const { error } = await supabase
+            .from("turnos")
+            .insert([
+              {
+                comercio_id: comercioActivo.id,
+                servicio_id: servicioId || null,
+                fecha,
+                hora: horaSel,
+                cliente_nombre: clienteNombre.trim(),
+                cliente_telefono: clienteTelefono.trim(),
+                estado: "confirmado"
+              }
+            ]);
+
+          if (error) {
+            if (error.code === "23505") {
+              alert("¡Ese turno se acaba de reservar hace un segundo! Elegí otro horario.");
+              await cargarTodo();
+              return;
+            }
+            throw error;
+          }
+
+          const servObj = serviciosDelComercio.find((s) => s.id === servicioId);
+          setReservaExitosa({
+            comercio: comercioActivo.nombre,
+            servicio: servObj ? servObj.nombre : "Turno general",
+            fecha,
+            hora: horaSel,
+            cliente: clienteNombre.trim()
+          });
+          setHoraSel("");
+          setClienteNombre("");
+          setClienteTelefono("");
+          await cargarTodo();
+        } catch (err) {
+          alert("Error al reservar: " + err.message);
+        } finally {
+          setEnviando(false);
+        }
+      }
+
+      async function cancelarTurno(turnoId) {
+        if (!confirm("¿Liberar este turno?")) return;
+        const { error } = await supabase.from("turnos").update({ estado: "cancelado" }).eq("id", turnoId);
+        if (error) alert("Error: " + error.message);
+        else await cargarTodo();
+      }
+
+      async function crearNuevoComercio(e) {
+        e.preventDefault();
+        if (!nuevoNombre.trim() || !nuevoServicioNombre.trim()) return;
+        setEnviando(true);
+        try {
+          const { data: comCreado, error: errCom } = await supabase
+            .from("comercios")
+            .insert([
+              {
+                nombre: nuevoNombre.trim(),
+                rubro: nuevoRubro,
+                direccion: nuevaDireccion.trim() || "Mar del Plata",
+                telefono: nuevoTelefono.trim(),
+                pin_admin: nuevoPin.trim() || "1234",
+                imagen_url:
+                  "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80"
+              }
+            ])
+            .select()
+            .single();
+
+          if (errCom) throw errCom;
+
+          const { error: errSer } = await supabase.from("servicios").insert([
+            {
+              comercio_id: comCreado.id,
+              nombre: nuevoServicioNombre.trim(),
+              duracion_min: 60,
+              precio: Number(nuevoServicioPrecio) || 0
+            }
+          ]);
+
+          if (errSer) throw errSer;
+
+          alert(`¡Listo! ${comCreado.nombre} ya está publicado en MiTurno. Tu PIN de panel es: ${comCreado.pin_admin}`);
+          setNuevoNombre("");
+          setNuevaDireccion("");
+          setNuevoTelefono("");
+          setNuevoServicioNombre("");
+          await cargarTodo();
+          setVista("cliente");
+        } catch (err) {
+          alert("Error al registrar comercio: " + err.message);
+        } finally {
+          setEnviando(false);
+        }
+      }
+
+      const comercioAdminObj = comercios.find((c) => c.id === comercioAdminId);
+      const turnosAdmin = turnos.filter((t) => t.comercio_id === comercioAdminId && t.fecha === fechaAdmin);
+
+      return (
+        <div className="min-h-screen flex flex-col">
+          <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
+            <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+              <button
+                onClick={() => {
+                  setVista("cliente");
+                  setComercioActivo(null);
+                  setReservaExitosa(null);
+                }}
+                className="flex items-center gap-2.5 text-left"
+              >
+                <img src="/miturno-app-nombre.png?v=2" alt="MiTurno" className="w-9 h-9 rounded-xl object-contain" />
+                <div>
+                  <span className="font-bold text-lg tracking-tight text-slate-900">MiTurno</span>
+                  <span className="hidden sm:inline-block ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                    En Vivo
+                  </span>
+                </div>
+              </button>
+
+              <nav className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={() => {
+                    setVista("cliente");
+                    setComercioActivo(null);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+                    vista === "cliente" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Reservar
+                </button>
+                <button
+                  onClick={() => setVista("comercio")}
+                  className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+                    vista === "comercio" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Soy Comercio
+                </button>
+                <button
+                  onClick={() => setVista("alta")}
+                  className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+                    vista === "alta" ? "bg-indigo-600 text-white shadow-sm" : "text-indigo-600 hover:bg-indigo-50"
+                  }`}
+                >
+                  + Sumar Local
+                </button>
+              </nav>
+            </div>
+          </header>
+
+          <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">
+            {errorMsg && (
+              <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center gap-3">
+                <LucideIcon name="alert-triangle" className="w-5 h-5 text-amber-600" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {cargando ? (
+              <div className="py-20 text-center text-slate-500">
+                <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-sm font-medium">Conectando con la agenda en vivo...</p>
+              </div>
+            ) : vista === "cliente" ? (
+              <>
+                {reservaExitosa ? (
+                  <div className="max-w-md mx-auto bg-white rounded-3xl border border-slate-200 p-7 text-center shadow-sm">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+                      <LucideIcon name="check-circle-2" className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-900">¡Turno Confirmado!</h2>
+                    <p className="text-sm text-slate-500 mt-1">Ya quedó agendado en el sistema del local.</p>
+
+                    <div className="mt-5 bg-slate-50 rounded-2xl p-4 text-left space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Local:</span>
+                        <span className="font-semibold text-slate-900">{reservaExitosa.comercio}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Servicio:</span>
+                        <span className="font-semibold text-slate-900">{reservaExitosa.servicio}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Fecha y hora:</span>
+                        <span className="font-semibold text-indigo-600">
+                          {reservaExitosa.fecha} · {reservaExitosa.hora} hs
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">A nombre de:</span>
+                        <span className="font-semibold text-slate-900">{reservaExitosa.cliente}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setReservaExitosa(null);
+                        setComercioActivo(null);
+                      }}
+                      className="mt-6 w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition"
+                    >
+                      Volver al inicio
+                    </button>
+                  </div>
+                ) : comercioActivo ? (
+                  <div className="max-w-2xl mx-auto">
+                    <button
+                      onClick={() => setComercioActivo(null)}
+                      className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-indigo-600"
+                    >
+                      <LucideIcon name="arrow-left" className="w-4 h-4" /> Volver a comercios
+                    </button>
+
+                    <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+                      <div className="h-44 bg-slate-200 relative">
+                        <img
+                          src={comercioActivo.imagen_url || "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80"}
+                          alt={comercioActivo.nombre}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/75 via-slate-900/20 to-transparent flex items-end p-6">
+                          <div className="text-white">
+                            <span className="text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full bg-indigo-600">
+                              {comercioActivo.rubro}
+                            </span>
+                            <h1 className="text-2xl font-bold mt-2">{comercioActivo.nombre}</h1>
+                            <p className="text-xs text-slate-200 flex items-center gap-1 mt-0.5">
+                              <LucideIcon name="map-pin" className="w-3.5 h-3.5" /> {comercioActivo.direccion}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <form onSubmit={confirmarReserva} className="p-6 space-y-5">
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                            1. Elegí el servicio o cancha
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {serviciosDelComercio.map((s) => (
+                              <button
+                                type="button"
+                                key={s.id}
+                                onClick={() => setServicioId(s.id)}
+                                className={`p-3.5 rounded-2xl border text-left transition ${
+                                  servicioId === s.id
+                                    ? "border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-600/20"
+                                    : "border-slate-200 hover:border-slate-300"
+                                }`}
+                              >
+                                <div className="font-semibold text-sm text-slate-900">{s.nombre}</div>
+                                <div className="text-xs text-slate-500 mt-1 flex justify-between">
+                                  <span>{s.duracion_min} min</span>
+                                  <span className="font-bold text-indigo-600">${Number(s.precio).toLocaleString("es-AR")}</span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                              2. Fecha
+                            </label>
+                            <input
+                              type="date"
+                              min={hoyISO()}
+                              value={fecha}
+                              onChange={(e) => {
+                                setFecha(e.target.value);
+                                setHoraSel("");
+                              }}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-indigo-600"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                              3. Horarios disponibles
+                            </label>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                              {slotsDisponibles.map((slot) => (
+                                <button
+                                  type="button"
+                                  disabled={slot.ocupado}
+                                  key={slot.hora}
+                                  onClick={() => setHoraSel(slot.hora)}
+                                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition ${
+                                    slot.ocupado
+                                      ? "bg-slate-100 text-slate-400 border-slate-100 line-through cursor-not-allowed"
+                                      : horaSel === slot.hora
+                                      ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                                      : "bg-white text-slate-700 border-slate-200 hover:border-indigo-400"
+                                  }`}
+                                >
+                                  {slot.hora}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">Tu nombre y apellido</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Ej: Lucas Fernández"
+                              value={clienteNombre}
+                              onChange={(e) => setClienteNombre(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-600"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">Tu WhatsApp</label>
+                            <input
+                              type="tel"
+                              required
+                              placeholder="Ej: 223 512 3456"
+                              value={clienteTelefono}
+                              onChange={(e) => setClienteTelefono(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-600"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={!horaSel || enviando}
+                          className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold text-sm transition shadow-sm"
+                        >
+                          {enviando
+                            ? "Confirmando turno..."
+                            : horaSel
+                            ? `Confirmar turno a las ${horaSel} hs`
+                            : "Seleccioná un horario para continuar"}
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="mb-6">
+                      <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                        Reservá tu turno en segundos
+                      </h1>
+                      <p className="text-slate-500 text-sm mt-1">
+                        Elegí un local en Mar del Plata, mirá disponibilidad real y agendá sin esperar respuesta.
+                      </p>
+
+                      <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                          <LucideIcon
+                            name="search"
+                            className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Buscar cancha, barbería, estética..."
+                            value={busqueda}
+                            onChange={(e) => setBusqueda(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none focus:border-indigo-600"
+                          />
+                        </div>
+                        <div className="flex gap-1.5 overflow-x-auto pb-1">
+                          {rubros.map((r) => (
+                            <button
+                              key={r}
+                              onClick={() => setRubroFiltro(r)}
+                              className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                                rubroFiltro === r
+                                  ? "bg-slate-900 text-white"
+                                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                              }`}
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {comerciosFiltrados.length === 0 ? (
+                      <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center">
+                        <p className="text-slate-500 text-sm">
+                          Todavía no hay comercios cargados. Tocá <strong>"+ Sumar Local"</strong> arriba para cargar el primero.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                        {comerciosFiltrados.map((c) => {
+                          const cantServ = servicios.filter((s) => s.comercio_id === c.id).length;
+                          return (
+                            <div
+                              key={c.id}
+                              onClick={() => setComercioActivo(c)}
+                              className="group bg-white rounded-3xl border border-slate-200 overflow-hidden hover:shadow-md hover:border-indigo-200 transition cursor-pointer flex flex-col"
+                            >
+                              <div className="h-40 bg-slate-200 relative overflow-hidden">
+                                <img
+                                  src={
+                                    c.imagen_url ||
+                                    "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80"
+                                  }
+                                  alt={c.nombre}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                />
+                                <span className="absolute top-3 left-3 text-xs font-bold px-2.5 py-1 rounded-full bg-white/95 text-slate-800 shadow-sm">
+                                  {c.rubro}
+                                </span>
+                              </div>
+                              <div className="p-5 flex-1 flex flex-col justify-between">
+                                <div>
+                                  <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition">
+                                    {c.nombre}
+                                  </h3>
+                                  <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                                    <LucideIcon name="map-pin" className="w-3.5 h-3.5 text-slate-400" />
+                                    {c.direccion || "Mar del Plata"}
+                                  </p>
+                                </div>
+
+                                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                  <span className="text-xs text-slate-500 font-medium">
+                                    {cantServ} {cantServ === 1 ? "opción" : "opciones"}
+                                  </span>
+                                  <span className="text-xs font-bold text-indigo-600 inline-flex items-center gap-1">
+                                    Ver turnos <LucideIcon name="chevron-right" className="w-3.5 h-3.5" />
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : vista === "comercio" ? (
+              <div className="max-w-3xl mx-auto">
+                {!adminAutenticado ? (
+                  <div className="max-w-md mx-auto bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+                    <h2 className="text-xl font-bold text-slate-900">Panel de Comercio</h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Elegí tu local e ingresá tu PIN para ver tus turnos en vivo (PIN demo: <strong>1234</strong>).
+                    </p>
+
+                    <div className="mt-4 space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Local</label>
+                        <select
+                          value={comercioAdminId}
+                          onChange={(e) => setComercioAdminId(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                        >
+                          {comercios.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">PIN de acceso</label>
+                        <input
+                          type="password"
+                          placeholder="••••"
+                          value={pinIngresado}
+                          onChange={(e) => setPinIngresado(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          const target = comercios.find((c) => c.id === comercioAdminId);
+                          if (target && target.pin_admin === pinIngresado) {
+                            setAdminAutenticado(true);
+                          } else {
+                            alert("PIN incorrecto (probá con 1234)");
+                          }
+                        }}
+                        className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
+                      >
+                        Entrar a mi agenda
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                      <div>
+                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
+                          ● Agenda en tiempo real
+                        </span>
+                        <h2 className="text-xl font-bold text-slate-900">{comercioAdminObj?.nombre}</h2>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          value={fechaAdmin}
+                          onChange={(e) => setFechaAdmin(e.target.value)}
+                          className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold"
+                        />
+                        <button
+                          onClick={() => {
+                            setAdminAutenticado(false);
+                            setPinIngresado("");
+                          }}
+                          className="px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200"
+                        >
+                          Salir
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-5">
+                      {turnosAdmin.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 text-sm">
+                          No hay turnos reservados para el {fechaAdmin}.
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {turnosAdmin.map((t) => {
+                            const serv = servicios.find((s) => s.id === t.servicio_id);
+                            return (
+                              <div
+                                key={t.id}
+                                className="p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3"
+                              >
+                                <div className="flex items-center gap-3.5">
+                                  <div className="px-3 py-2 rounded-xl bg-indigo-50 text-indigo-700 font-extrabold text-sm">
+                                    {t.hora.slice(0, 5)}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-sm text-slate-900">{t.cliente_nombre}</div>
+                                    <div className="text-xs text-slate-500">
+                                      {serv ? serv.nombre : "Turno"} · Tel: {t.cliente_telefono}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={`https://wa.me/549${t.cliente_telefono.replace(/\D/g, "")}`}
+                                    target="_blank"
+                                    className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100"
+                                  >
+                                    WhatsApp
+                                  </a>
+                                  <button
+                                    onClick={() => cancelarTurno(t.id)}
+                                    className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold hover:bg-rose-100"
+                                  >
+                                    Liberar
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="max-w-lg mx-auto bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600">
+                  30 días gratis · Lanzamiento Mardel
+                </span>
+                <h2 className="text-xl font-bold text-slate-900 mt-2">Sumá tu comercio a MiTurno</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Completá estos datos y tu agenda queda online al instante para recibir reservas.
+                </p>
+
+                <form onSubmit={crearNuevoComercio} className="mt-4 space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre del negocio</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Estética Sol MDQ"
+                      value={nuevoNombre}
+                      onChange={(e) => setNuevoNombre(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Rubro</label>
+                      <select
+                        value={nuevoRubro}
+                        onChange={(e) => setNuevoRubro(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                      >
+                        <option>Barbería</option>
+                        <option>Estética</option>
+                        <option>Deportes</option>
+                        <option>Salud</option>
+                        <option>Otro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">PIN de administrador</label>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        required
+                        value={nuevoPin}
+                        onChange={(e) => setNuevoPin(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Dirección</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Alem 3450"
+                        value={nuevaDireccion}
+                        onChange={(e) => setNuevaDireccion(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">WhatsApp del local</label>
+                      <input
+                        type="tel"
+                        placeholder="2235000000"
+                        value={nuevoTelefono}
+                        onChange={(e) => setNuevoTelefono(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Primer servicio / cancha</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej: Corte de pelo / Cancha 1"
+                        value={nuevoServicioNombre}
+                        onChange={(e) => setNuevoServicioNombre(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Precio ($)</label>
+                      <input
+                        type="number"
+                        required
+                        value={nuevoServicioPrecio}
+                        onChange={(e) => setNuevoServicioPrecio(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={enviando}
+                    className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
+                  >
+                    {enviando ? "Publicando..." : "Publicar mi agenda gratis"}
+                  </button>
+                </form>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
