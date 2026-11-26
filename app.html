@@ -107,7 +107,7 @@
       const [horaCierre, setHoraCierre] = useState("21:00");
       const [nuevoAliasPago, setNuevoAliasPago] = useState("");
       const [nuevoLinkPago, setNuevoLinkPago] = useState("");
-      const [nuevoPorcentajeSena, setNuevoPorcentajeSena] = useState("50");
+      const [nuevoPorcentajeSena, setNuevoPorcentajeSena] = useState("0");
 
       const [listaServiciosNuevos, setListaServiciosNuevos] = useState([
         { nombre: "", duracion_min: "60", precio: "15000" }
@@ -183,6 +183,13 @@
         return servicios.filter((s) => s.comercio_id === comercioActivo.id);
       }, [servicios, comercioActivo]);
 
+      // Regla de pago según lo que exige el comercio seleccionado
+      const pctSenaComercio = comercioActivo ? Number(comercioActivo.porcentaje_sena || 0) : 0;
+      const permitePagoEnLocal = pctSenaComercio === 0;
+      const exigePagoTotal = pctSenaComercio >= 100;
+      const exigeSenaParcial = pctSenaComercio > 0 && pctSenaComercio < 100;
+      const pctMostradoEnSena = exigeSenaParcial ? pctSenaComercio : 50;
+
       useEffect(() => {
         if (serviciosDelComercio.length > 0) {
           setServicioId(serviciosDelComercio[0].id);
@@ -190,6 +197,17 @@
           setServicioId("");
         }
         setHoraSel("");
+
+        if (comercioActivo) {
+          const pct = Number(comercioActivo.porcentaje_sena || 0);
+          if (pct >= 100) {
+            setMedioPago("total_tarjeta");
+          } else if (pct > 0) {
+            setMedioPago("sena_mp");
+          } else {
+            setMedioPago("local");
+          }
+        }
       }, [comercioActivo, serviciosDelComercio]);
 
       const servicioSeleccionadoObj = useMemo(
@@ -198,8 +216,7 @@
       );
 
       const precioBaseTurno = servicioSeleccionadoObj ? Number(servicioSeleccionadoObj.precio) : 0;
-      const pctSenaComercio = comercioActivo ? Number(comercioActivo.porcentaje_sena || 50) : 50;
-      const montoSenaCalculado = Math.round((precioBaseTurno * pctSenaComercio) / 100);
+      const montoSenaCalculado = Math.round((precioBaseTurno * pctMostradoEnSena) / 100);
 
       const slotsDisponibles = useMemo(() => {
         if (!comercioActivo) return [];
@@ -258,7 +275,7 @@
             aliasPago: comercioActivo.alias_pago || "",
             linkPago: comercioActivo.link_pago || "",
             medioPago,
-            pctSena: pctSenaComercio,
+            pctSena: pctMostradoEnSena,
             montoAbonar,
             precioBaseTurno,
             servicio: servicioSeleccionadoObj ? servicioSeleccionadoObj.nombre : "Turno general",
@@ -315,7 +332,7 @@
                 hora_cierre: horaCierre,
                 alias_pago: nuevoAliasPago.trim() || null,
                 link_pago: nuevoLinkPago.trim() || null,
-                porcentaje_sena: Number(nuevoPorcentajeSena) || 50,
+                porcentaje_sena: Number(nuevoPorcentajeSena) || 0,
                 duracion_turno_min: Number(serviciosValidos[0].duracion_min) || 60,
                 imagen_url:
                   nuevaImagen.trim() ||
@@ -346,7 +363,7 @@
           setNuevaImagen("");
           setNuevoAliasPago("");
           setNuevoLinkPago("");
-          setNuevoPorcentajeSena("50");
+          setNuevoPorcentajeSena("0");
           setListaServiciosNuevos([{ nombre: "", duracion_min: "60", precio: "15000" }]);
           await cargarTodo();
         } catch (err) {
@@ -396,12 +413,11 @@
         reservaExitosa?.medioPago === "sena_mp"
           ? `Seña ${reservaExitosa.pctSena}% con Mercado Pago`
           : reservaExitosa?.medioPago === "total_tarjeta"
-          ? "Pago total con Tarjeta (Débito / Crédito)"
+          ? "Pago total con Tarjeta / MP"
           : "Pagar en el local al asistir";
 
       return (
         <div className="min-h-screen flex flex-col">
-          {/* Header minimalista 100% clientes */}
           <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
             <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
               <button
@@ -444,7 +460,6 @@
             </div>
           </header>
 
-          {/* Contenido Principal */}
           <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-7">
             {errorMsg && (
               <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center gap-3">
@@ -693,41 +708,57 @@
                           />
                         </div>
 
-                        {/* Selector "¿Cómo querés abonar tu reserva?" estilo demo */}
+                        {/* Selector filtrado según la política de seña del comercio */}
                         <div className="pt-1 space-y-2.5">
-                          <label className="block text-xs font-bold text-slate-800">
-                            ¿Cómo querés abonar tu reserva?
-                          </label>
+                          <div className="flex items-center justify-between">
+                            <label className="block text-xs font-bold text-slate-800">
+                              ¿Cómo querés abonar tu reserva?
+                            </label>
+                            {exigeSenaParcial && (
+                              <span className="text-[11px] font-semibold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">
+                                Seña mínima {pctSenaComercio}%
+                              </span>
+                            )}
+                            {exigePagoTotal && (
+                              <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                Pago anticipado 100%
+                              </span>
+                            )}
+                          </div>
 
-                          {/* Opción 1: Seña con Mercado Pago */}
-                          <button
-                            type="button"
-                            onClick={() => setMedioPago("sena_mp")}
-                            className={`w-full p-3.5 rounded-2xl border-2 text-left flex items-center justify-between gap-3 transition ${
-                              medioPago === "sena_mp"
-                                ? "border-sky-500 bg-sky-50/40"
-                                : "border-slate-200 hover:border-slate-300 bg-white"
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-[#009EE3] text-white font-extrabold text-xs flex items-center justify-center shrink-0">
-                                MP
-                              </div>
-                              <div>
-                                <div className="font-bold text-sm text-slate-900">
-                                  Seña {pctSenaComercio}% con Mercado Pago
+                          {/* Opción Seña: aparece si el local pide seña parcial (1%-99%) o si no exige seña (0%, opcional) */}
+                          {!exigePagoTotal && (
+                            <button
+                              type="button"
+                              onClick={() => setMedioPago("sena_mp")}
+                              className={`w-full p-3.5 rounded-2xl border-2 text-left flex items-center justify-between gap-3 transition ${
+                                medioPago === "sena_mp"
+                                  ? "border-sky-500 bg-sky-50/40"
+                                  : "border-slate-200 hover:border-slate-300 bg-white"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-[#009EE3] text-white font-extrabold text-xs flex items-center justify-center shrink-0">
+                                  MP
                                 </div>
-                                <div className="text-[11px] text-slate-500">
-                                  Dinero en cuenta o QR · Resto en el local
+                                <div>
+                                  <div className="font-bold text-sm text-slate-900">
+                                    Seña {pctMostradoEnSena}% con Mercado Pago
+                                  </div>
+                                  <div className="text-[11px] text-slate-500">
+                                    {exigeSenaParcial
+                                      ? "Mínimo requerido para confirmar · Resto en el local"
+                                      : "Dinero en cuenta o QR · Resto en el local"}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            <div className="font-extrabold text-sm text-sky-600 whitespace-nowrap">
-                              $ {montoSenaCalculado.toLocaleString("es-AR")}
-                            </div>
-                          </button>
+                              <div className="font-extrabold text-sm text-sky-600 whitespace-nowrap">
+                                $ {montoSenaCalculado.toLocaleString("es-AR")}
+                              </div>
+                            </button>
+                          )}
 
-                          {/* Opción 2: Pago total con Tarjeta (Débito / Crédito) */}
+                          {/* Opción Pago Total 100%: siempre disponible */}
                           <button
                             type="button"
                             onClick={() => setMedioPago("total_tarjeta")}
@@ -743,7 +774,7 @@
                               </div>
                               <div>
                                 <div className="font-bold text-sm text-slate-900">
-                                  Pago total con Tarjeta (Débito / Crédito)
+                                  Pago total 100% (Tarjeta / MP)
                                 </div>
                                 <div className="text-[11px] text-slate-500">
                                   Abono completo del turno anticipado
@@ -755,33 +786,35 @@
                             </div>
                           </button>
 
-                          {/* Opción 3: Pagar en el local al asistir */}
-                          <button
-                            type="button"
-                            onClick={() => setMedioPago("local")}
-                            className={`w-full p-3.5 rounded-2xl border-2 text-left flex items-center justify-between gap-3 transition ${
-                              medioPago === "local"
-                                ? "border-slate-800 bg-slate-50"
-                                : "border-slate-200 hover:border-slate-300 bg-white"
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                                <LucideIcon name="store" className="w-5 h-5" />
-                              </div>
-                              <div>
-                                <div className="font-bold text-sm text-slate-900">
-                                  Pagar en el local al asistir
+                          {/* Opción Pagar en el local: SOLO aparece si porcentaje_sena === 0 */}
+                          {permitePagoEnLocal && (
+                            <button
+                              type="button"
+                              onClick={() => setMedioPago("local")}
+                              className={`w-full p-3.5 rounded-2xl border-2 text-left flex items-center justify-between gap-3 transition ${
+                                medioPago === "local"
+                                  ? "border-slate-800 bg-slate-50"
+                                  : "border-slate-200 hover:border-slate-300 bg-white"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                                  <LucideIcon name="store" className="w-5 h-5" />
                                 </div>
-                                <div className="text-[11px] text-slate-500">
-                                  Efectivo o transferencia en el mostrador
+                                <div>
+                                  <div className="font-bold text-sm text-slate-900">
+                                    Pagar en el local al asistir
+                                  </div>
+                                  <div className="text-[11px] text-slate-500">
+                                    Efectivo o transferencia en el mostrador
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            <div className="font-bold text-xs text-slate-600 whitespace-nowrap">
-                              Sin seña
-                            </div>
-                          </button>
+                              <div className="font-bold text-xs text-slate-600 whitespace-nowrap">
+                                Sin seña
+                              </div>
+                            </button>
+                          )}
                         </div>
 
                         <button
@@ -854,6 +887,7 @@
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                         {comerciosFiltrados.map((c) => {
                           const cantServ = servicios.filter((s) => s.comercio_id === c.id).length;
+                          const pctC = Number(c.porcentaje_sena || 0);
                           return (
                             <div
                               key={c.id}
@@ -872,6 +906,11 @@
                                 <span className="absolute top-3 left-3 text-xs font-bold px-2.5 py-1 rounded-full bg-white/95 text-slate-800 shadow-sm">
                                   {c.rubro}
                                 </span>
+                                {pctC > 0 && (
+                                  <span className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-900/85 text-white shadow-sm">
+                                    {pctC >= 100 ? "Pago anticipado" : `Seña ${pctC}%`}
+                                  </span>
+                                )}
                               </div>
                               <div className="p-5 flex-1 flex flex-col justify-between">
                                 <div>
@@ -935,14 +974,14 @@
                   </div>
                 ) : (
                   <>
-                    {/* Bloque 1: Crear nuevo comercio con múltiples tipos de turno y datos de cobro */}
+                    {/* Bloque 1: Crear nuevo comercio */}
                     <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
                       <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white">
                         Modo Administrador
                       </span>
                       <h2 className="text-xl font-bold text-slate-900 mt-2">1. Dar de alta nuevo comercio</h2>
                       <p className="text-xs text-slate-500 mt-1">
-                        Cargá el local, sus servicios/canchas y opcionalmente su Alias o Link de Mercado Pago.
+                        Definí si exige seña mínima (10% a 100%) o permite pagar en el local (0%).
                       </p>
 
                       <form onSubmit={crearNuevoComercio} className="mt-4 space-y-3.5">
@@ -1030,10 +1069,10 @@
                           </div>
                         </div>
 
-                        {/* Datos de cobro directo del comercio */}
+                        {/* Política de seña / pago */}
                         <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 space-y-2.5">
                           <div className="text-xs font-bold text-sky-900">
-                            Cobro de seña / transferencia (opcional)
+                            Política de seña y datos de cobro
                           </div>
                           <div className="grid grid-cols-3 gap-2">
                             <div className="col-span-2">
@@ -1049,12 +1088,16 @@
                               <select
                                 value={nuevoPorcentajeSena}
                                 onChange={(e) => setNuevoPorcentajeSena(e.target.value)}
-                                className="w-full px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-xs"
+                                className="w-full px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold"
                               >
-                                <option value="30">Seña 30%</option>
-                                <option value="50">Seña 50%</option>
-                                <option value="100">Pago 100%</option>
-                                <option value="0">Sin seña</option>
+                                <option value="0">0% (En local)</option>
+                                <option value="10">Mín. 10%</option>
+                                <option value="15">Mín. 15%</option>
+                                <option value="20">Mín. 20%</option>
+                                <option value="25">Mín. 25%</option>
+                                <option value="30">Mín. 30%</option>
+                                <option value="50">Mín. 50%</option>
+                                <option value="100">Solo 100%</option>
                               </select>
                             </div>
                           </div>
@@ -1246,7 +1289,6 @@
             )}
           </main>
 
-          {/* Footer limpio con enlace directo a tu WhatsApp */}
           <footer className="bg-white border-t border-slate-200 py-6 mt-12">
             <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
               <div>© 2026 MiTurno · Mar del Plata</div>
