@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MiTurno App — Agenda Online en Vivo</title>
+  <title>MiTurno — Turnos y Agenda Online</title>
   <meta name="description" content="Reservá turno en segundos o gestioná la agenda de tu comercio en tiempo real con MiTurno." />
   <meta name="theme-color" content="#4F46E5" />
   <link rel="icon" type="image/png" href="/miturno-app-nombre.png?v=2" />
@@ -21,8 +21,12 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef } = React;
 
+    // Configuración Supabase y Contacto Comercial
     const SUPABASE_URL = "https://nvocbwykxrehnbiwllip.supabase.co";
     const SUPABASE_KEY = "sb_publishable_RknZJRvKuhL5VFuIqmq6hw_G5G3REzx";
+    const WHATSAPP_COMERCIAL = "5492230000000"; // Reemplazá por tu número con 549223...
+    const CLAVE_MAESTRA_ALTA = "miturno2026"; // Tu clave privada para dar de alta locales
+
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     function LucideIcon({ name, className = "w-4 h-4", ...props }) {
@@ -64,13 +68,19 @@
     }
 
     function App() {
-      const [vista, setVista] = useState("cliente");
+      const esModoAdminSecreto = useMemo(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("admin") === "1";
+      }, []);
+
+      const [vista, setVista] = useState(esModoAdminSecreto ? "alta" : "cliente");
       const [comercios, setComercios] = useState([]);
       const [servicios, setServicios] = useState([]);
       const [turnos, setTurnos] = useState([]);
       const [cargando, setCargando] = useState(true);
       const [errorMsg, setErrorMsg] = useState("");
 
+      // Vista Cliente
       const [rubroFiltro, setRubroFiltro] = useState("Todos");
       const [busqueda, setBusqueda] = useState("");
       const [comercioActivo, setComercioActivo] = useState(null);
@@ -82,18 +92,26 @@
       const [enviando, setEnviando] = useState(false);
       const [reservaExitosa, setReservaExitosa] = useState(null);
 
+      // Vista Panel Comercio
       const [comercioAdminId, setComercioAdminId] = useState("");
       const [pinIngresado, setPinIngresado] = useState("");
       const [adminAutenticado, setAdminAutenticado] = useState(false);
       const [fechaAdmin, setFechaAdmin] = useState(hoyISO());
 
+      // Vista Alta Privada (Solo vos)
+      const [claveMaestraInput, setClaveMaestraInput] = useState("");
+      const [maestroDesbloqueado, setMaestroDesbloqueado] = useState(false);
       const [nuevoNombre, setNuevoNombre] = useState("");
       const [nuevoRubro, setNuevoRubro] = useState("Barbería");
       const [nuevaDireccion, setNuevaDireccion] = useState("");
       const [nuevoTelefono, setNuevoTelefono] = useState("");
       const [nuevoPin, setNuevoPin] = useState("1234");
+      const [nuevaImagen, setNuevaImagen] = useState("");
+      const [horaApertura, setHoraApertura] = useState("09:00");
+      const [horaCierre, setHoraCierre] = useState("21:00");
       const [nuevoServicioNombre, setNuevoServicioNombre] = useState("");
-      const [nuevoServicioPrecio, setNuevoServicioPrecio] = useState("10000");
+      const [nuevoServicioDuracion, setNuevoServicioDuracion] = useState("60");
+      const [nuevoServicioPrecio, setNuevoServicioPrecio] = useState("15000");
 
       async function cargarTodo() {
         setCargando(true);
@@ -118,7 +136,7 @@
           }
         } catch (err) {
           console.error(err);
-          setErrorMsg("No se pudo conectar con Supabase. Verificá que hayas ejecutado el script SQL de tablas.");
+          setErrorMsg("Error de conexión con la base de datos.");
         } finally {
           setCargando(false);
         }
@@ -191,23 +209,21 @@
         if (!comercioActivo || !horaSel || !clienteNombre.trim() || !clienteTelefono.trim()) return;
         setEnviando(true);
         try {
-          const { error } = await supabase
-            .from("turnos")
-            .insert([
-              {
-                comercio_id: comercioActivo.id,
-                servicio_id: servicioId || null,
-                fecha,
-                hora: horaSel,
-                cliente_nombre: clienteNombre.trim(),
-                cliente_telefono: clienteTelefono.trim(),
-                estado: "confirmado"
-              }
-            ]);
+          const { error } = await supabase.from("turnos").insert([
+            {
+              comercio_id: comercioActivo.id,
+              servicio_id: servicioId || null,
+              fecha,
+              hora: horaSel,
+              cliente_nombre: clienteNombre.trim(),
+              cliente_telefono: clienteTelefono.trim(),
+              estado: "confirmado"
+            }
+          ]);
 
           if (error) {
             if (error.code === "23505") {
-              alert("¡Ese turno se acaba de reservar hace un segundo! Elegí otro horario.");
+              alert("Ese turno se acaba de reservar hace un segundo. Elegí otro horario.");
               await cargarTodo();
               return;
             }
@@ -254,7 +270,11 @@
                 direccion: nuevaDireccion.trim() || "Mar del Plata",
                 telefono: nuevoTelefono.trim(),
                 pin_admin: nuevoPin.trim() || "1234",
+                hora_apertura: horaApertura,
+                hora_cierre: horaCierre,
+                duracion_turno_min: Number(nuevoServicioDuracion) || 60,
                 imagen_url:
+                  nuevaImagen.trim() ||
                   "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80"
               }
             ])
@@ -267,17 +287,18 @@
             {
               comercio_id: comCreado.id,
               nombre: nuevoServicioNombre.trim(),
-              duracion_min: 60,
+              duracion_min: Number(nuevoServicioDuracion) || 60,
               precio: Number(nuevoServicioPrecio) || 0
             }
           ]);
 
           if (errSer) throw errSer;
 
-          alert(`¡Listo! ${comCreado.nombre} ya está publicado en MiTurno. Tu PIN de panel es: ${comCreado.pin_admin}`);
+          alert(`Comercio "${comCreado.nombre}" publicado con éxito. PIN del dueño: ${comCreado.pin_admin}`);
           setNuevoNombre("");
           setNuevaDireccion("");
           setNuevoTelefono("");
+          setNuevaImagen("");
           setNuevoServicioNombre("");
           await cargarTodo();
           setVista("cliente");
@@ -290,9 +311,13 @@
 
       const comercioAdminObj = comercios.find((c) => c.id === comercioAdminId);
       const turnosAdmin = turnos.filter((t) => t.comercio_id === comercioAdminId && t.fecha === fechaAdmin);
+      const mensajeWhatsApp = encodeURIComponent(
+        "Hola! Vi MiTurno y me gustaría sumar mi comercio para gestionar turnos online."
+      );
 
       return (
         <div className="min-h-screen flex flex-col">
+          {/* Header limpio y corporativo */}
           <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
             <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
               <button
@@ -306,8 +331,8 @@
                 <img src="/miturno-app-nombre.png?v=2" alt="MiTurno" className="w-9 h-9 rounded-xl object-contain" />
                 <div>
                   <span className="font-bold text-lg tracking-tight text-slate-900">MiTurno</span>
-                  <span className="hidden sm:inline-block ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                    En Vivo
+                  <span className="hidden sm:inline-block ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+                    Mar del Plata
                   </span>
                 </div>
               </button>
@@ -318,7 +343,7 @@
                     setVista("cliente");
                     setComercioActivo(null);
                   }}
-                  className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+                  className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
                     vista === "cliente" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
@@ -326,25 +351,28 @@
                 </button>
                 <button
                   onClick={() => setVista("comercio")}
-                  className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+                  className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
                     vista === "comercio" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
                   Soy Comercio
                 </button>
-                <button
-                  onClick={() => setVista("alta")}
-                  className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
-                    vista === "alta" ? "bg-indigo-600 text-white shadow-sm" : "text-indigo-600 hover:bg-indigo-50"
-                  }`}
-                >
-                  + Sumar Local
-                </button>
+                {esModoAdminSecreto && (
+                  <button
+                    onClick={() => setVista("alta")}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+                      vista === "alta" ? "bg-slate-900 text-white shadow-sm" : "text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    Alta Privada
+                  </button>
+                )}
               </nav>
             </div>
           </header>
 
-          <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-6">
+          {/* Contenido Principal */}
+          <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-7">
             {errorMsg && (
               <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center gap-3">
                 <LucideIcon name="alert-triangle" className="w-5 h-5 text-amber-600" />
@@ -355,7 +383,7 @@
             {cargando ? (
               <div className="py-20 text-center text-slate-500">
                 <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                <p className="text-sm font-medium">Conectando con la agenda en vivo...</p>
+                <p className="text-sm font-medium">Cargando disponibilidad...</p>
               </div>
             ) : vista === "cliente" ? (
               <>
@@ -364,8 +392,8 @@
                     <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
                       <LucideIcon name="check-circle-2" className="w-8 h-8" />
                     </div>
-                    <h2 className="text-2xl font-bold text-slate-900">¡Turno Confirmado!</h2>
-                    <p className="text-sm text-slate-500 mt-1">Ya quedó agendado en el sistema del local.</p>
+                    <h2 className="text-2xl font-bold text-slate-900">Turno Confirmado</h2>
+                    <p className="text-sm text-slate-500 mt-1">Tu reserva ya quedó registrada en la agenda del local.</p>
 
                     <div className="mt-5 bg-slate-50 rounded-2xl p-4 text-left space-y-2 text-sm">
                       <div className="flex justify-between">
@@ -383,7 +411,7 @@
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-500">A nombre de:</span>
+                        <span className="text-slate-500">Titular:</span>
                         <span className="font-semibold text-slate-900">{reservaExitosa.cliente}</span>
                       </div>
                     </div>
@@ -410,7 +438,10 @@
                     <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
                       <div className="h-44 bg-slate-200 relative">
                         <img
-                          src={comercioActivo.imagen_url || "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80"}
+                          src={
+                            comercioActivo.imagen_url ||
+                            "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80"
+                          }
                           alt={comercioActivo.nombre}
                           className="w-full h-full object-cover"
                         />
@@ -430,7 +461,7 @@
                       <form onSubmit={confirmarReserva} className="p-6 space-y-5">
                         <div>
                           <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                            1. Elegí el servicio o cancha
+                            1. Seleccioná el servicio
                           </label>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             {serviciosDelComercio.map((s) => (
@@ -447,7 +478,9 @@
                                 <div className="font-semibold text-sm text-slate-900">{s.nombre}</div>
                                 <div className="text-xs text-slate-500 mt-1 flex justify-between">
                                   <span>{s.duracion_min} min</span>
-                                  <span className="font-bold text-indigo-600">${Number(s.precio).toLocaleString("es-AR")}</span>
+                                  <span className="font-bold text-indigo-600">
+                                    ${Number(s.precio).toLocaleString("es-AR")}
+                                  </span>
                                 </div>
                               </button>
                             ))}
@@ -499,7 +532,9 @@
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
                           <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1">Tu nombre y apellido</label>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">
+                              Nombre y apellido
+                            </label>
                             <input
                               type="text"
                               required
@@ -510,7 +545,7 @@
                             />
                           </div>
                           <div>
-                            <label className="block text-xs font-semibold text-slate-600 mb-1">Tu WhatsApp</label>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">WhatsApp</label>
                             <input
                               type="tel"
                               required
@@ -530,7 +565,7 @@
                           {enviando
                             ? "Confirmando turno..."
                             : horaSel
-                            ? `Confirmar turno a las ${horaSel} hs`
+                            ? `Confirmar turno · ${horaSel} hs`
                             : "Seleccioná un horario para continuar"}
                         </button>
                       </form>
@@ -540,10 +575,10 @@
                   <div>
                     <div className="mb-6">
                       <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                        Reservá tu turno en segundos
+                        Reservá tu turno online
                       </h1>
                       <p className="text-slate-500 text-sm mt-1">
-                        Elegí un local en Mar del Plata, mirá disponibilidad real y agendá sin esperar respuesta.
+                        Comercios adheridos en Mar del Plata con agenda actualizada en tiempo real.
                       </p>
 
                       <div className="mt-4 flex flex-col sm:flex-row gap-3">
@@ -554,7 +589,7 @@
                           />
                           <input
                             type="text"
-                            placeholder="Buscar cancha, barbería, estética..."
+                            placeholder="Buscar por nombre o zona..."
                             value={busqueda}
                             onChange={(e) => setBusqueda(e.target.value)}
                             className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none focus:border-indigo-600"
@@ -581,7 +616,7 @@
                     {comerciosFiltrados.length === 0 ? (
                       <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center">
                         <p className="text-slate-500 text-sm">
-                          Todavía no hay comercios cargados. Tocá <strong>"+ Sumar Local"</strong> arriba para cargar el primero.
+                          No se encontraron comercios disponibles con ese criterio.
                         </p>
                       </div>
                     ) : (
@@ -620,10 +655,10 @@
 
                                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
                                   <span className="text-xs text-slate-500 font-medium">
-                                    {cantServ} {cantServ === 1 ? "opción" : "opciones"}
+                                    {cantServ} {cantServ === 1 ? "servicio" : "servicios"}
                                   </span>
                                   <span className="text-xs font-bold text-indigo-600 inline-flex items-center gap-1">
-                                    Ver turnos <LucideIcon name="chevron-right" className="w-3.5 h-3.5" />
+                                    Agendar <LucideIcon name="chevron-right" className="w-3.5 h-3.5" />
                                   </span>
                                 </div>
                               </div>
@@ -636,17 +671,18 @@
                 )}
               </>
             ) : vista === "comercio" ? (
+              /* Panel exclusivo para dueños de comercios ya adheridos */
               <div className="max-w-3xl mx-auto">
                 {!adminAutenticado ? (
                   <div className="max-w-md mx-auto bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-                    <h2 className="text-xl font-bold text-slate-900">Panel de Comercio</h2>
+                    <h2 className="text-xl font-bold text-slate-900">Acceso Comercios</h2>
                     <p className="text-xs text-slate-500 mt-1">
-                      Elegí tu local e ingresá tu PIN para ver tus turnos en vivo (PIN demo: <strong>1234</strong>).
+                      Ingresá con el PIN asignado a tu local para gestionar tu agenda diaria.
                     </p>
 
                     <div className="mt-4 space-y-3">
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Local</label>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Comercio</label>
                         <select
                           value={comercioAdminId}
                           onChange={(e) => setComercioAdminId(e.target.value)}
@@ -660,7 +696,7 @@
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">PIN de acceso</label>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">PIN de seguridad</label>
                         <input
                           type="password"
                           placeholder="••••"
@@ -675,13 +711,26 @@
                           if (target && target.pin_admin === pinIngresado) {
                             setAdminAutenticado(true);
                           } else {
-                            alert("PIN incorrecto (probá con 1234)");
+                            alert("PIN incorrecto.");
                           }
                         }}
                         className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
                       >
-                        Entrar a mi agenda
+                        Ingresar al panel
                       </button>
+                    </div>
+
+                    <div className="mt-5 pt-4 border-t border-slate-100 text-center">
+                      <p className="text-xs text-slate-500">
+                        ¿Todavía no adheriste tu local?{" "}
+                        <a
+                          href={`https://wa.me/${WHATSAPP_COMERCIAL}?text=${mensajeWhatsApp}`}
+                          target="_blank"
+                          className="font-semibold text-indigo-600 hover:underline"
+                        >
+                          Solicitar alta comercial
+                        </a>
+                      </p>
                     </div>
                   </div>
                 ) : (
@@ -689,7 +738,7 @@
                     <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
                       <div>
                         <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
-                          ● Agenda en tiempo real
+                          ● Agenda sincronizada
                         </span>
                         <h2 className="text-xl font-bold text-slate-900">{comercioAdminObj?.nombre}</h2>
                       </div>
@@ -707,7 +756,7 @@
                           }}
                           className="px-3 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200"
                         >
-                          Salir
+                          Cerrar sesión
                         </button>
                       </div>
                     </div>
@@ -715,7 +764,7 @@
                     <div className="mt-5">
                       {turnosAdmin.length === 0 ? (
                         <div className="py-12 text-center text-slate-400 text-sm">
-                          No hay turnos reservados para el {fechaAdmin}.
+                          No hay turnos agendados para el {fechaAdmin}.
                         </div>
                       ) : (
                         <div className="space-y-2.5">
@@ -733,7 +782,7 @@
                                   <div>
                                     <div className="font-bold text-sm text-slate-900">{t.cliente_nombre}</div>
                                     <div className="text-xs text-slate-500">
-                                      {serv ? serv.nombre : "Turno"} · Tel: {t.cliente_telefono}
+                                      {serv ? serv.nombre : "Turno"} · {t.cliente_telefono}
                                     </div>
                                   </div>
                                 </div>
@@ -762,114 +811,214 @@
                 )}
               </div>
             ) : (
+              /* Consola privada de onboarding (solo accesible con ?admin=1 + clave maestra) */
               <div className="max-w-lg mx-auto bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600">
-                  30 días gratis · Lanzamiento Mardel
-                </span>
-                <h2 className="text-xl font-bold text-slate-900 mt-2">Sumá tu comercio a MiTurno</h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Completá estos datos y tu agenda queda online al instante para recibir reservas.
-                </p>
-
-                <form onSubmit={crearNuevoComercio} className="mt-4 space-y-3.5">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre del negocio</label>
+                {!maestroDesbloqueado ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-slate-900">
+                      <LucideIcon name="lock" className="w-5 h-5 text-indigo-600" />
+                      <h2 className="text-lg font-bold">Consola de Alta Comercial</h2>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Acceso restringido al administrador de MiTurno para dar de alta comercios verificados.
+                    </p>
                     <input
-                      type="text"
-                      required
-                      placeholder="Ej: Estética Sol MDQ"
-                      value={nuevoNombre}
-                      onChange={(e) => setNuevoNombre(e.target.value)}
+                      type="password"
+                      placeholder="Clave maestra"
+                      value={claveMaestraInput}
+                      onChange={(e) => setClaveMaestraInput(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                     />
+                    <button
+                      onClick={() => {
+                        if (claveMaestraInput === CLAVE_MAESTRA_ALTA) {
+                          setMaestroDesbloqueado(true);
+                        } else {
+                          alert("Clave maestra incorrecta.");
+                        }
+                      }}
+                      className="w-full py-3 rounded-xl bg-slate-900 text-white font-bold text-sm"
+                    >
+                      Desbloquear consola
+                    </button>
                   </div>
+                ) : (
+                  <>
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white">
+                      Modo Administrador
+                    </span>
+                    <h2 className="text-xl font-bold text-slate-900 mt-2">Dar de alta nuevo comercio</h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Cargá los datos acordados con el local y entregale su PIN de acceso.
+                    </p>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Rubro</label>
-                      <select
-                        value={nuevoRubro}
-                        onChange={(e) => setNuevoRubro(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                    <form onSubmit={crearNuevoComercio} className="mt-4 space-y-3.5">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre del comercio</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ej: Estética Sol MDQ"
+                          value={nuevoNombre}
+                          onChange={(e) => setNuevoNombre(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Rubro</label>
+                          <select
+                            value={nuevoRubro}
+                            onChange={(e) => setNuevoRubro(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                          >
+                            <option>Barbería</option>
+                            <option>Estética</option>
+                            <option>Deportes</option>
+                            <option>Salud</option>
+                            <option>Otro</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">PIN del dueño</label>
+                          <input
+                            type="text"
+                            maxLength={6}
+                            required
+                            value={nuevoPin}
+                            onChange={(e) => setNuevoPin(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Dirección</label>
+                          <input
+                            type="text"
+                            placeholder="Ej: Alem 3450"
+                            value={nuevaDireccion}
+                            onChange={(e) => setNuevaDireccion(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">WhatsApp local</label>
+                          <input
+                            type="tel"
+                            placeholder="2235000000"
+                            value={nuevoTelefono}
+                            onChange={(e) => setNuevoTelefono(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Apertura</label>
+                          <input
+                            type="time"
+                            value={horaApertura}
+                            onChange={(e) => setHoraApertura(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Cierre</label>
+                          <input
+                            type="time"
+                            value={horaCierre}
+                            onChange={(e) => setHoraCierre(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          URL de portada (opcional)
+                        </label>
+                        <input
+                          type="url"
+                          placeholder="https://..."
+                          value={nuevaImagen}
+                          onChange={(e) => setNuevaImagen(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                        />
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 grid grid-cols-3 gap-3">
+                        <div className="col-span-2">
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">
+                            Servicio inicial
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ej: Corte / Cancha 1"
+                            value={nuevoServicioNombre}
+                            onChange={(e) => setNuevoServicioNombre(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Precio ($)</label>
+                          <input
+                            type="number"
+                            required
+                            value={nuevoServicioPrecio}
+                            onChange={(e) => setNuevoServicioPrecio(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          Duración del turno (minutos)
+                        </label>
+                        <select
+                          value={nuevoServicioDuracion}
+                          onChange={(e) => setNuevoServicioDuracion(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                        >
+                          <option value="30">30 minutos</option>
+                          <option value="45">45 minutos</option>
+                          <option value="60">60 minutos</option>
+                          <option value="90">90 minutos</option>
+                        </select>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={enviando}
+                        className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
                       >
-                        <option>Barbería</option>
-                        <option>Estética</option>
-                        <option>Deportes</option>
-                        <option>Salud</option>
-                        <option>Otro</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">PIN de administrador</label>
-                      <input
-                        type="text"
-                        maxLength={6}
-                        required
-                        value={nuevoPin}
-                        onChange={(e) => setNuevoPin(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Dirección</label>
-                      <input
-                        type="text"
-                        placeholder="Ej: Alem 3450"
-                        value={nuevaDireccion}
-                        onChange={(e) => setNuevaDireccion(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">WhatsApp del local</label>
-                      <input
-                        type="tel"
-                        placeholder="2235000000"
-                        value={nuevoTelefono}
-                        onChange={(e) => setNuevoTelefono(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-100 grid grid-cols-3 gap-3">
-                    <div className="col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Primer servicio / cancha</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ej: Corte de pelo / Cancha 1"
-                        value={nuevoServicioNombre}
-                        onChange={(e) => setNuevoServicioNombre(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Precio ($)</label>
-                      <input
-                        type="number"
-                        required
-                        value={nuevoServicioPrecio}
-                        onChange={(e) => setNuevoServicioPrecio(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={enviando}
-                    className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
-                  >
-                    {enviando ? "Publicando..." : "Publicar mi agenda gratis"}
-                  </button>
-                </form>
+                        {enviando ? "Publicando comercio..." : "Publicar comercio en MiTurno"}
+                      </button>
+                    </form>
+                  </>
+                )}
               </div>
             )}
           </main>
+
+          {/* Footer corporativo con contacto comercial */}
+          <footer className="bg-white border-t border-slate-200 py-6 mt-12">
+            <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+              <div>© 2026 MiTurno · Gestión de turnos online en Mar del Plata</div>
+              <a
+                href={`https://wa.me/${WHATSAPP_COMERCIAL}?text=${mensajeWhatsApp}`}
+                target="_blank"
+                className="font-semibold text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1.5"
+              >
+                <LucideIcon name="store" className="w-3.5 h-3.5" /> ¿Tenés un comercio? Sumalo a MiTurno
+              </a>
+            </div>
+          </footer>
         </div>
       );
     }
