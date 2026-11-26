@@ -26,7 +26,7 @@
 
     const SUPABASE_URL = "https://nvocbwykxrehnbiwllip.supabase.co";
     const SUPABASE_KEY = "sb_publishable_RknZJRvKuhL5VFuIqmq6hw_G5G3REzx";
-    const WHATSAPP_SOPORTE = "5492230000000"; // Tu WhatsApp para soporte / altas
+    const WHATSAPP_SOPORTE = "5492230000000"; // Reemplazá por tu WhatsApp con 549223...
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -66,7 +66,7 @@
       const [tab, setTab] = useState("agenda");
       const [fechaFiltro, setFechaFiltro] = useState(hoyISO());
 
-      // Alta/edición de servicios
+      // Alta de servicios
       const [servNombre, setServNombre] = useState("");
       const [servDuracion, setServDuracion] = useState("60");
       const [servPrecio, setServPrecio] = useState("");
@@ -129,7 +129,6 @@
         [comercios, comercioId]
       );
 
-      // Precargar los datos actuales del local en el formulario de edición cuando entra o cambia de local
       useEffect(() => {
         if (comercioActual) {
           setEditNombre(comercioActual.nombre || "");
@@ -387,6 +386,13 @@
                   <div className="space-y-2.5">
                     {turnosDelDia.map((t) => {
                       const serv = serviciosPropios.find((s) => s.id === t.servicio_id);
+                      const badgePago =
+                        t.medio_pago === "sena_mp"
+                          ? { texto: "Seña MP", clase: "bg-sky-100 text-sky-700" }
+                          : t.medio_pago === "total_tarjeta"
+                          ? { texto: "Pago Total", clase: "bg-indigo-100 text-indigo-700" }
+                          : { texto: "En local", clase: "bg-slate-100 text-slate-600" };
+
                       return (
                         <div
                           key={t.id}
@@ -397,8 +403,13 @@
                               {t.hora.slice(0, 5)}
                             </div>
                             <div>
-                              <div className="font-bold text-sm text-slate-900">{t.cliente_nombre}</div>
-                              <div className="text-xs text-slate-500">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-sm text-slate-900">{t.cliente_nombre}</span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgePago.clase}`}>
+                                  {badgePago.texto}
+                                </span>
+                              </div>
+                              <div className="text-xs text-slate-500 mt-0.5">
                                 {serv ? serv.nombre : "Turno"} · {t.cliente_telefono}
                               </div>
                             </div>
@@ -578,9 +589,9 @@
                   </div>
                 </div>
 
-                {/* Datos de cobro directo */}
+                {/* Datos de cobro directo y política de seña */}
                 <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 space-y-2.5">
-                  <div className="text-xs font-bold text-sky-900">Cobro de señas y transferencias</div>
+                  <div className="text-xs font-bold text-sky-900">Política de seña y datos de cobro</div>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-2">
                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">Alias o CVU</label>
@@ -593,16 +604,20 @@
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Seña (%)</label>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Seña mínima</label>
                       <select
                         value={editPorcentajeSena}
                         onChange={(e) => setEditPorcentajeSena(e.target.value)}
-                        className="w-full px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-xs"
+                        className="w-full px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold"
                       >
-                        <option value="0">Sin seña</option>
-                        <option value="30">30%</option>
-                        <option value="50">50%</option>
-                        <option value="100">100%</option>
+                        <option value="0">0% (En local)</option>
+                        <option value="10">Mín. 10%</option>
+                        <option value="15">Mín. 15%</option>
+                        <option value="20">Mín. 20%</option>
+                        <option value="25">Mín. 25%</option>
+                        <option value="30">Mín. 30%</option>
+                        <option value="50">Mín. 50%</option>
+                        <option value="100">Solo 100%</option>
                       </select>
                     </div>
                   </div>
