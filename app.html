@@ -1049,4 +1049,222 @@
                               <select
                                 value={nuevoPorcentajeSena}
                                 onChange={(e) => setNuevoPorcentajeSena(e.target.value)}
-                                className="w-full px-2
+                                className="w-full px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-xs"
+                              >
+                                <option value="30">Seña 30%</option>
+                                <option value="50">Seña 50%</option>
+                                <option value="100">Pago 100%</option>
+                                <option value="0">Sin seña</option>
+                              </select>
+                            </div>
+                          </div>
+                          <input
+                            type="url"
+                            placeholder="Link de pago Mercado Pago (opcional, https://mpago.la/...)"
+                            value={nuevoLinkPago}
+                            onChange={(e) => setNuevoLinkPago(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">
+                            URL de portada (opcional)
+                          </label>
+                          <input
+                            type="url"
+                            placeholder="https://..."
+                            value={nuevaImagen}
+                            onChange={(e) => setNuevaImagen(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+
+                        {/* Lista dinámica de tipos de turno / servicios */}
+                        <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                              Tipos de turno / Servicios ({listaServiciosNuevos.length})
+                            </label>
+                            <button
+                              type="button"
+                              onClick={agregarFilaServicio}
+                              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1"
+                            >
+                              + Agregar otro tipo
+                            </button>
+                          </div>
+
+                          {listaServiciosNuevos.map((srv, idx) => (
+                            <div key={idx} className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder={`Ej: ${idx === 0 ? "Sesión / Cancha 1" : "Evaluación / Cancha 2"}`}
+                                  value={srv.nombre}
+                                  onChange={(e) => actualizarFilaServicio(idx, "nombre", e.target.value)}
+                                  className="flex-1 px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm"
+                                />
+                                {listaServiciosNuevos.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => quitarFilaServicio(idx)}
+                                    className="p-2 rounded-xl text-rose-500 hover:bg-rose-50"
+                                    title="Quitar"
+                                  >
+                                    <LucideIcon name="x" className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <select
+                                  value={srv.duracion_min}
+                                  onChange={(e) => actualizarFilaServicio(idx, "duracion_min", e.target.value)}
+                                  className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium"
+                                >
+                                  <option value="30">30 minutos</option>
+                                  <option value="45">45 minutos</option>
+                                  <option value="60">60 minutos</option>
+                                  <option value="90">90 minutos</option>
+                                  <option value="120">120 minutos</option>
+                                </select>
+                                <input
+                                  type="number"
+                                  required
+                                  placeholder="Precio ($)"
+                                  value={srv.precio}
+                                  onChange={(e) => actualizarFilaServicio(idx, "precio", e.target.value)}
+                                  className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={enviando}
+                          className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
+                        >
+                          {enviando ? "Publicando comercio..." : "Publicar comercio en MiTurno"}
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Bloque 2: Agregar más tipos de turno a un comercio ya publicado */}
+                    {comercios.length > 0 && (
+                      <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">2. Gestionar servicios de locales activos</h3>
+                          <p className="text-xs text-slate-500">
+                            Agregá o quitá tipos de turno a un comercio que ya está publicado.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Comercio</label>
+                          <select
+                            value={comercioGestionId}
+                            onChange={(e) => setComercioGestionId(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                          >
+                            {comercios.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          {serviciosDelLocalSeleccionado.map((s) => (
+                            <div
+                              key={s.id}
+                              className="px-3.5 py-2.5 rounded-xl bg-slate-50 flex items-center justify-between text-xs"
+                            >
+                              <div>
+                                <span className="font-bold text-slate-900">{s.nombre}</span>
+                                <span className="text-slate-500 ml-2">
+                                  ({s.duracion_min} min · $ {Number(s.precio).toLocaleString("es-AR")})
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => desactivarServicioExistente(s.id)}
+                                className="text-rose-600 font-semibold hover:underline"
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <form onSubmit={agregarServicioAComercioExistente} className="pt-2 border-t border-slate-100 space-y-2.5">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Nuevo tipo de turno (ej: Tintura / Cancha 3)"
+                            value={extraServNombre}
+                            onChange={(e) => setExtraServNombre(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <select
+                              value={extraServDuracion}
+                              onChange={(e) => setExtraServDuracion(e.target.value)}
+                              className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs bg-white"
+                            >
+                              <option value="30">30 minutos</option>
+                              <option value="45">45 minutos</option>
+                              <option value="60">60 minutos</option>
+                              <option value="90">90 minutos</option>
+                              <option value="120">120 minutos</option>
+                            </select>
+                            <input
+                              type="number"
+                              required
+                              placeholder="Precio ($)"
+                              value={extraServPrecio}
+                              onChange={(e) => setExtraServPrecio(e.target.value)}
+                              className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={enviando}
+                            className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition"
+                          >
+                            + Agregar tipo de turno a este local
+                          </button>
+                        </form>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </main>
+
+          {/* Footer limpio con enlace directo a tu WhatsApp */}
+          <footer className="bg-white border-t border-slate-200 py-6 mt-12">
+            <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+              <div>© 2026 MiTurno · Mar del Plata</div>
+              <a
+                href={`https://wa.me/${WHATSAPP_COMERCIAL}?text=${mensajeWhatsApp}`}
+                target="_blank"
+                className="font-semibold text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1.5"
+              >
+                <LucideIcon name="store" className="w-3.5 h-3.5" /> ¿Tenés un comercio? Sumalo a MiTurno
+              </a>
+            </div>
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
