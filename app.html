@@ -91,6 +91,7 @@
       const [clienteTelefono, setClienteTelefono] = useState("");
       const [enviando, setEnviando] = useState(false);
       const [reservaExitosa, setReservaExitosa] = useState(null);
+      const [aliasCopiado, setAliasCopiado] = useState(false);
 
       // Vista Alta Privada (Solo vos con ?admin=1)
       const [claveMaestraInput, setClaveMaestraInput] = useState("");
@@ -103,13 +104,15 @@
       const [nuevaImagen, setNuevaImagen] = useState("");
       const [horaApertura, setHoraApertura] = useState("09:00");
       const [horaCierre, setHoraCierre] = useState("21:00");
+      const [nuevoAliasPago, setNuevoAliasPago] = useState("");
+      const [nuevoLinkPago, setNuevoLinkPago] = useState("");
+      const [nuevoPorcentajeSena, setNuevoPorcentajeSena] = useState("0");
 
-      // Lista dinámica de servicios al crear un local
       const [listaServiciosNuevos, setListaServiciosNuevos] = useState([
         { nombre: "", duracion_min: "60", precio: "15000" }
       ]);
 
-      // Gestionar servicios de locales ya creados
+      // Gestionar locales existentes
       const [comercioGestionId, setComercioGestionId] = useState("");
       const [extraServNombre, setExtraServNombre] = useState("");
       const [extraServDuracion, setExtraServDuracion] = useState("60");
@@ -233,13 +236,24 @@
           }
 
           const servObj = serviciosDelComercio.find((s) => s.id === servicioId);
+          const precioTotal = servObj ? Number(servObj.precio) : 0;
+          const pct = Number(comercioActivo.porcentaje_sena) || 0;
+          const montoSena = pct > 0 ? Math.round((precioTotal * pct) / 100) : precioTotal;
+
           setReservaExitosa({
             comercio: comercioActivo.nombre,
+            telefonoComercio: comercioActivo.telefono || "",
+            aliasPago: comercioActivo.alias_pago || "",
+            linkPago: comercioActivo.link_pago || "",
+            porcentajeSena: pct,
+            montoSena,
+            precioTotal,
             servicio: servObj ? servObj.nombre : "Turno general",
             fecha,
             hora: horaSel,
             cliente: clienteNombre.trim()
           });
+          setAliasCopiado(false);
           setHoraSel("");
           setClienteNombre("");
           setClienteTelefono("");
@@ -251,7 +265,6 @@
         }
       }
 
-      // Funciones para manejar múltiples servicios en el alta
       function actualizarFilaServicio(idx, campo, valor) {
         setListaServiciosNuevos((prev) =>
           prev.map((item, i) => (i === idx ? { ...item, [campo]: valor } : item))
@@ -287,6 +300,9 @@
                 pin_admin: nuevoPin.trim() || "1234",
                 hora_apertura: horaApertura,
                 hora_cierre: horaCierre,
+                alias_pago: nuevoAliasPago.trim() || null,
+                link_pago: nuevoLinkPago.trim() || null,
+                porcentaje_sena: Number(nuevoPorcentajeSena) || 0,
                 duracion_turno_min: Number(serviciosValidos[0].duracion_min) || 60,
                 imagen_url:
                   nuevaImagen.trim() ||
@@ -309,12 +325,15 @@
           if (errSer) throw errSer;
 
           alert(
-            `Comercio "${comCreado.nombre}" publicado con ${filasParaInsertar.length} servicios/canchas. PIN del dueño: ${comCreado.pin_admin}`
+            `Comercio "${comCreado.nombre}" publicado con ${filasParaInsertar.length} servicios. PIN del dueño: ${comCreado.pin_admin}`
           );
           setNuevoNombre("");
           setNuevaDireccion("");
           setNuevoTelefono("");
           setNuevaImagen("");
+          setNuevoAliasPago("");
+          setNuevoLinkPago("");
+          setNuevoPorcentajeSena("0");
           setListaServiciosNuevos([{ nombre: "", duracion_min: "60", precio: "15000" }]);
           await cargarTodo();
         } catch (err) {
@@ -359,6 +378,7 @@
       );
 
       const serviciosDelLocalSeleccionado = servicios.filter((s) => s.comercio_id === comercioGestionId);
+      const tieneDatosDePago = reservaExitosa && (reservaExitosa.aliasPago || reservaExitosa.linkPago);
 
       return (
         <div className="min-h-screen flex flex-col">
@@ -426,8 +446,12 @@
                     <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
                       <LucideIcon name="check-circle-2" className="w-8 h-8" />
                     </div>
-                    <h2 className="text-2xl font-bold text-slate-900">Turno Confirmado</h2>
-                    <p className="text-sm text-slate-500 mt-1">Tu reserva ya quedó registrada en la agenda del local.</p>
+                    <h2 className="text-2xl font-bold text-slate-900">Turno Agendado</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {tieneDatosDePago
+                        ? "Aboná la seña para asegurar tu lugar y enviá el comprobante."
+                        : "Tu reserva ya quedó registrada en la agenda del local."}
+                    </p>
 
                     <div className="mt-5 bg-slate-50 rounded-2xl p-4 text-left space-y-2 text-sm">
                       <div className="flex justify-between">
@@ -448,14 +472,81 @@
                         <span className="text-slate-500">Titular:</span>
                         <span className="font-semibold text-slate-900">{reservaExitosa.cliente}</span>
                       </div>
+                      {tieneDatosDePago && reservaExitosa.montoSena > 0 && (
+                        <div className="pt-2 border-t border-slate-200 flex justify-between">
+                          <span className="text-slate-600 font-medium">
+                            {reservaExitosa.porcentajeSena > 0
+                              ? `Seña requerida (${reservaExitosa.porcentajeSena}%):`
+                              : "Valor del turno:"}
+                          </span>
+                          <span className="font-extrabold text-emerald-700">
+                            ${reservaExitosa.montoSena.toLocaleString("es-AR")}
+                          </span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Bloque de pago directo al local (Alias o Link de Mercado Pago) */}
+                    {tieneDatosDePago && (
+                      <div className="mt-4 p-4 rounded-2xl bg-sky-50 border border-sky-200 text-left space-y-3">
+                        <div className="text-xs font-bold uppercase tracking-wider text-sky-800">
+                          Datos de pago del comercio
+                        </div>
+
+                        {reservaExitosa.aliasPago && (
+                          <div className="flex items-center justify-between bg-white px-3 py-2 rounded-xl border border-sky-200">
+                            <div>
+                              <div className="text-[11px] text-slate-400">Alias / CVU</div>
+                              <div className="font-mono font-bold text-xs text-slate-900">
+                                {reservaExitosa.aliasPago}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(reservaExitosa.aliasPago);
+                                setAliasCopiado(true);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-sky-600 text-white text-xs font-bold hover:bg-sky-700"
+                            >
+                              {aliasCopiado ? "¡Copiado!" : "Copiar Alias"}
+                            </button>
+                          </div>
+                        )}
+
+                        {reservaExitosa.linkPago && (
+                          <a
+                            href={reservaExitosa.linkPago}
+                            target="_blank"
+                            className="w-full py-2.5 rounded-xl bg-[#009EE3] hover:bg-[#0089C7] text-white font-bold text-xs flex items-center justify-center gap-2 transition"
+                          >
+                            <LucideIcon name="credit-card" className="w-4 h-4" /> Pagar con Mercado Pago
+                          </a>
+                        )}
+
+                        {reservaExitosa.telefonoComercio && (
+                          <a
+                            href={`https://wa.me/549${reservaExitosa.telefonoComercio.replace(
+                              /\D/g,
+                              ""
+                            )}?text=${encodeURIComponent(
+                              `Hola ${reservaExitosa.comercio}! Reservé turno para ${reservaExitosa.servicio} el ${reservaExitosa.fecha} a las ${reservaExitosa.hora} hs (a nombre de ${reservaExitosa.cliente}). Te adjunto el comprobante de pago.`
+                            )}`}
+                            target="_blank"
+                            className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition"
+                          >
+                            <LucideIcon name="message-circle" className="w-4 h-4" /> Enviar comprobante por WhatsApp
+                          </a>
+                        )}
+                      </div>
+                    )}
 
                     <button
                       onClick={() => {
                         setReservaExitosa(null);
                         setComercioActivo(null);
                       }}
-                      className="mt-6 w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm transition"
+                      className="mt-5 w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm transition"
                     >
                       Volver al inicio
                     </button>
@@ -738,14 +829,14 @@
                   </div>
                 ) : (
                   <>
-                    {/* Bloque 1: Crear nuevo comercio con múltiples tipos de turno */}
+                    {/* Bloque 1: Crear nuevo comercio con múltiples tipos de turno y datos de cobro */}
                     <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
                       <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white">
                         Modo Administrador
                       </span>
                       <h2 className="text-xl font-bold text-slate-900 mt-2">1. Dar de alta nuevo comercio</h2>
                       <p className="text-xs text-slate-500 mt-1">
-                        Cargá el local y agregá todos los tipos de turno, servicios o canchas que ofrezca.
+                        Cargá el local, sus servicios/canchas y opcionalmente su Alias o Link de Mercado Pago.
                       </p>
 
                       <form onSubmit={crearNuevoComercio} className="mt-4 space-y-3.5">
@@ -831,6 +922,43 @@
                               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                             />
                           </div>
+                        </div>
+
+                        {/* Datos de cobro directo del comercio */}
+                        <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200/80 space-y-2.5">
+                          <div className="text-xs font-bold text-sky-900">
+                            Cobro de seña / transferencia (opcional)
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2">
+                              <input
+                                type="text"
+                                placeholder="Alias o CVU (ej: barberia.mp)"
+                                value={nuevoAliasPago}
+                                onChange={(e) => setNuevoAliasPago(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <select
+                                value={nuevoPorcentajeSena}
+                                onChange={(e) => setNuevoPorcentajeSena(e.target.value)}
+                                className="w-full px-2.5 py-2 rounded-xl bg-white border border-slate-200 text-xs"
+                              >
+                                <option value="0">Sin seña</option>
+                                <option value="30">Seña 30%</option>
+                                <option value="50">Seña 50%</option>
+                                <option value="100">Pago 100%</option>
+                              </select>
+                            </div>
+                          </div>
+                          <input
+                            type="url"
+                            placeholder="Link de pago Mercado Pago (opcional, https://mpago.la/...)"
+                            value={nuevoLinkPago}
+                            onChange={(e) => setNuevoLinkPago(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs"
+                          />
                         </div>
 
                         <div>
