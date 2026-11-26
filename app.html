@@ -103,9 +103,17 @@
       const [nuevaImagen, setNuevaImagen] = useState("");
       const [horaApertura, setHoraApertura] = useState("09:00");
       const [horaCierre, setHoraCierre] = useState("21:00");
-      const [nuevoServicioNombre, setNuevoServicioNombre] = useState("");
-      const [nuevoServicioDuracion, setNuevoServicioDuracion] = useState("60");
-      const [nuevoServicioPrecio, setNuevoServicioPrecio] = useState("15000");
+
+      // Lista dinámica de servicios al crear un local
+      const [listaServiciosNuevos, setListaServiciosNuevos] = useState([
+        { nombre: "", duracion_min: "60", precio: "15000" }
+      ]);
+
+      // Gestionar servicios de locales ya creados
+      const [comercioGestionId, setComercioGestionId] = useState("");
+      const [extraServNombre, setExtraServNombre] = useState("");
+      const [extraServDuracion, setExtraServDuracion] = useState("60");
+      const [extraServPrecio, setExtraServPrecio] = useState("15000");
 
       async function cargarTodo() {
         setCargando(true);
@@ -124,6 +132,10 @@
           setComercios(resCom.data || []);
           setServicios(resSer.data || []);
           setTurnos(resTur.data || []);
+
+          if (resCom.data && resCom.data.length > 0 && !comercioGestionId) {
+            setComercioGestionId(resCom.data[0].id);
+          }
         } catch (err) {
           console.error(err);
           setErrorMsg("Error de conexión con la agenda.");
@@ -239,9 +251,29 @@
         }
       }
 
+      // Funciones para manejar múltiples servicios en el alta
+      function actualizarFilaServicio(idx, campo, valor) {
+        setListaServiciosNuevos((prev) =>
+          prev.map((item, i) => (i === idx ? { ...item, [campo]: valor } : item))
+        );
+      }
+
+      function agregarFilaServicio() {
+        setListaServiciosNuevos((prev) => [...prev, { nombre: "", duracion_min: "60", precio: "15000" }]);
+      }
+
+      function quitarFilaServicio(idx) {
+        if (listaServiciosNuevos.length === 1) return;
+        setListaServiciosNuevos((prev) => prev.filter((_, i) => i !== idx));
+      }
+
       async function crearNuevoComercio(e) {
         e.preventDefault();
-        if (!nuevoNombre.trim() || !nuevoServicioNombre.trim()) return;
+        const serviciosValidos = listaServiciosNuevos.filter((s) => s.nombre.trim() !== "");
+        if (!nuevoNombre.trim() || serviciosValidos.length === 0) {
+          alert("Completá el nombre del comercio y al menos un servicio o cancha.");
+          return;
+        }
         setEnviando(true);
         try {
           const { data: comCreado, error: errCom } = await supabase
@@ -255,7 +287,7 @@
                 pin_admin: nuevoPin.trim() || "1234",
                 hora_apertura: horaApertura,
                 hora_cierre: horaCierre,
-                duracion_turno_min: Number(nuevoServicioDuracion) || 60,
+                duracion_turno_min: Number(serviciosValidos[0].duracion_min) || 60,
                 imagen_url:
                   nuevaImagen.trim() ||
                   "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80"
@@ -266,25 +298,25 @@
 
           if (errCom) throw errCom;
 
-          const { error: errSer } = await supabase.from("servicios").insert([
-            {
-              comercio_id: comCreado.id,
-              nombre: nuevoServicioNombre.trim(),
-              duracion_min: Number(nuevoServicioDuracion) || 60,
-              precio: Number(nuevoServicioPrecio) || 0
-            }
-          ]);
+          const filasParaInsertar = serviciosValidos.map((s) => ({
+            comercio_id: comCreado.id,
+            nombre: s.nombre.trim(),
+            duracion_min: Number(s.duracion_min) || 60,
+            precio: Number(s.precio) || 0
+          }));
 
+          const { error: errSer } = await supabase.from("servicios").insert(filasParaInsertar);
           if (errSer) throw errSer;
 
-          alert(`Comercio "${comCreado.nombre}" publicado con éxito. PIN del dueño: ${comCreado.pin_admin}`);
+          alert(
+            `Comercio "${comCreado.nombre}" publicado con ${filasParaInsertar.length} servicios/canchas. PIN del dueño: ${comCreado.pin_admin}`
+          );
           setNuevoNombre("");
           setNuevaDireccion("");
           setNuevoTelefono("");
           setNuevaImagen("");
-          setNuevoServicioNombre("");
+          setListaServiciosNuevos([{ nombre: "", duracion_min: "60", precio: "15000" }]);
           await cargarTodo();
-          setVista("cliente");
         } catch (err) {
           alert("Error al registrar comercio: " + err.message);
         } finally {
@@ -292,9 +324,41 @@
         }
       }
 
+      async function agregarServicioAComercioExistente(e) {
+        e.preventDefault();
+        if (!comercioGestionId || !extraServNombre.trim()) return;
+        setEnviando(true);
+        try {
+          const { error } = await supabase.from("servicios").insert([
+            {
+              comercio_id: comercioGestionId,
+              nombre: extraServNombre.trim(),
+              duracion_min: Number(extraServDuracion) || 60,
+              precio: Number(extraServPrecio) || 0
+            }
+          ]);
+          if (error) throw error;
+          setExtraServNombre("");
+          await cargarTodo();
+        } catch (err) {
+          alert("Error al agregar servicio: " + err.message);
+        } finally {
+          setEnviando(false);
+        }
+      }
+
+      async function desactivarServicioExistente(id) {
+        if (!confirm("¿Ocultar este servicio?")) return;
+        const { error } = await supabase.from("servicios").update({ activo: false }).eq("id", id);
+        if (error) alert("Error: " + error.message);
+        else await cargarTodo();
+      }
+
       const mensajeWhatsApp = encodeURIComponent(
         "Hola! Vi MiTurno y me gustaría sumar mi comercio para gestionar turnos online."
       );
+
+      const serviciosDelLocalSeleccionado = servicios.filter((s) => s.comercio_id === comercioGestionId);
 
       return (
         <div className="min-h-screen flex flex-col">
@@ -642,9 +706,9 @@
               </>
             ) : (
               /* Consola privada de onboarding (solo accesible con ?admin=1 + clave maestra) */
-              <div className="max-w-lg mx-auto bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+              <div className="max-w-xl mx-auto space-y-6">
                 {!maestroDesbloqueado ? (
-                  <div className="space-y-4">
+                  <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
                     <div className="flex items-center gap-2 text-slate-900">
                       <LucideIcon name="lock" className="w-5 h-5 text-indigo-600" />
                       <h2 className="text-lg font-bold">Consola de Alta Comercial</h2>
@@ -674,162 +738,274 @@
                   </div>
                 ) : (
                   <>
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white">
-                      Modo Administrador
-                    </span>
-                    <h2 className="text-xl font-bold text-slate-900 mt-2">Dar de alta nuevo comercio</h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Cargá los datos acordados con el local y entregale su PIN para la app de comercios.
-                    </p>
+                    {/* Bloque 1: Crear nuevo comercio con múltiples tipos de turno */}
+                    <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white">
+                        Modo Administrador
+                      </span>
+                      <h2 className="text-xl font-bold text-slate-900 mt-2">1. Dar de alta nuevo comercio</h2>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Cargá el local y agregá todos los tipos de turno, servicios o canchas que ofrezca.
+                      </p>
 
-                    <form onSubmit={crearNuevoComercio} className="mt-4 space-y-3.5">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre del comercio</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Ej: Estética Sol MDQ"
-                          value={nuevoNombre}
-                          onChange={(e) => setNuevoNombre(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
+                      <form onSubmit={crearNuevoComercio} className="mt-4 space-y-3.5">
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1">Rubro</label>
-                          <select
-                            value={nuevoRubro}
-                            onChange={(e) => setNuevoRubro(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
-                          >
-                            <option>Barbería</option>
-                            <option>Estética</option>
-                            <option>Deportes</option>
-                            <option>Salud</option>
-                            <option>Otro</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1">PIN del dueño</label>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Nombre del comercio</label>
                           <input
                             type="text"
-                            maxLength={6}
                             required
-                            value={nuevoPin}
-                            onChange={(e) => setNuevoPin(e.target.value)}
+                            placeholder="Ej: Estética Sol MDQ"
+                            value={nuevoNombre}
+                            onChange={(e) => setNuevoNombre(e.target.value)}
                             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                           />
                         </div>
-                      </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1">Dirección</label>
-                          <input
-                            type="text"
-                            placeholder="Ej: Alem 3450"
-                            value={nuevaDireccion}
-                            onChange={(e) => setNuevaDireccion(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                          />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">Rubro</label>
+                            <select
+                              value={nuevoRubro}
+                              onChange={(e) => setNuevoRubro(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                            >
+                              <option>Barbería</option>
+                              <option>Estética</option>
+                              <option>Deportes</option>
+                              <option>Salud</option>
+                              <option>Otro</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">PIN del dueño</label>
+                            <input
+                              type="text"
+                              maxLength={6}
+                              required
+                              value={nuevoPin}
+                              onChange={(e) => setNuevoPin(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1">WhatsApp local</label>
-                          <input
-                            type="tel"
-                            placeholder="2235000000"
-                            value={nuevoTelefono}
-                            onChange={(e) => setNuevoTelefono(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                          />
-                        </div>
-                      </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1">Apertura</label>
-                          <input
-                            type="time"
-                            value={horaApertura}
-                            onChange={(e) => setHoraApertura(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                          />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">Dirección</label>
+                            <input
+                              type="text"
+                              placeholder="Ej: Alem 3450"
+                              value={nuevaDireccion}
+                              onChange={(e) => setNuevaDireccion(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">WhatsApp local</label>
+                            <input
+                              type="tel"
+                              placeholder="2235000000"
+                              value={nuevoTelefono}
+                              onChange={(e) => setNuevoTelefono(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1">Cierre</label>
-                          <input
-                            type="time"
-                            value={horaCierre}
-                            onChange={(e) => setHoraCierre(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                          />
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">Apertura</label>
+                            <input
+                              type="time"
+                              value={horaApertura}
+                              onChange={(e) => setHoraApertura(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-600 mb-1">Cierre</label>
+                            <input
+                              type="time"
+                              value={horaCierre}
+                              onChange={(e) => setHoraCierre(e.target.value)}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                            />
+                          </div>
                         </div>
-                      </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">
-                          URL de portada (opcional)
-                        </label>
-                        <input
-                          type="url"
-                          placeholder="https://..."
-                          value={nuevaImagen}
-                          onChange={(e) => setNuevaImagen(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                        />
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-100 grid grid-cols-3 gap-3">
-                        <div className="col-span-2">
+                        <div>
                           <label className="block text-xs font-semibold text-slate-600 mb-1">
-                            Servicio inicial
+                            URL de portada (opcional)
                           </label>
                           <input
+                            type="url"
+                            placeholder="https://..."
+                            value={nuevaImagen}
+                            onChange={(e) => setNuevaImagen(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                          />
+                        </div>
+
+                        {/* Lista dinámica de tipos de turno / servicios */}
+                        <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                              Tipos de turno / Servicios ({listaServiciosNuevos.length})
+                            </label>
+                            <button
+                              type="button"
+                              onClick={agregarFilaServicio}
+                              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 inline-flex items-center gap-1"
+                            >
+                              + Agregar otro tipo
+                            </button>
+                          </div>
+
+                          {listaServiciosNuevos.map((srv, idx) => (
+                            <div key={idx} className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder={`Ej: ${idx === 0 ? "Corte Clásico / Cancha 1" : "Corte + Barba / Cancha 2"}`}
+                                  value={srv.nombre}
+                                  onChange={(e) => actualizarFilaServicio(idx, "nombre", e.target.value)}
+                                  className="flex-1 px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm"
+                                />
+                                {listaServiciosNuevos.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => quitarFilaServicio(idx)}
+                                    className="p-2 rounded-xl text-rose-500 hover:bg-rose-50"
+                                    title="Quitar"
+                                  >
+                                    <LucideIcon name="x" className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <select
+                                  value={srv.duracion_min}
+                                  onChange={(e) => actualizarFilaServicio(idx, "duracion_min", e.target.value)}
+                                  className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium"
+                                >
+                                  <option value="30">30 minutos</option>
+                                  <option value="45">45 minutos</option>
+                                  <option value="60">60 minutos</option>
+                                  <option value="90">90 minutos</option>
+                                  <option value="120">120 minutos</option>
+                                </select>
+                                <input
+                                  type="number"
+                                  required
+                                  placeholder="Precio ($)"
+                                  value={srv.precio}
+                                  onChange={(e) => actualizarFilaServicio(idx, "precio", e.target.value)}
+                                  className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={enviando}
+                          className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
+                        >
+                          {enviando ? "Publicando comercio..." : "Publicar comercio en MiTurno"}
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Bloque 2: Agregar más tipos de turno a un comercio ya publicado */}
+                    {comercios.length > 0 && (
+                      <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">2. Gestionar servicios de locales activos</h3>
+                          <p className="text-xs text-slate-500">
+                            Agregá o quitá tipos de turno a un comercio que ya está publicado.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-600 mb-1">Comercio</label>
+                          <select
+                            value={comercioGestionId}
+                            onChange={(e) => setComercioGestionId(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
+                          >
+                            {comercios.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          {serviciosDelLocalSeleccionado.map((s) => (
+                            <div
+                              key={s.id}
+                              className="px-3.5 py-2.5 rounded-xl bg-slate-50 flex items-center justify-between text-xs"
+                            >
+                              <div>
+                                <span className="font-bold text-slate-900">{s.nombre}</span>
+                                <span className="text-slate-500 ml-2">
+                                  ({s.duracion_min} min · ${Number(s.precio).toLocaleString("es-AR")})
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => desactivarServicioExistente(s.id)}
+                                className="text-rose-600 font-semibold hover:underline"
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <form onSubmit={agregarServicioAComercioExistente} className="pt-2 border-t border-slate-100 space-y-2.5">
+                          <input
                             type="text"
                             required
-                            placeholder="Ej: Corte / Cancha 1"
-                            value={nuevoServicioNombre}
-                            onChange={(e) => setNuevoServicioNombre(e.target.value)}
+                            placeholder="Nuevo tipo de turno (ej: Tintura / Cancha 3)"
+                            value={extraServNombre}
+                            onChange={(e) => setExtraServNombre(e.target.value)}
                             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                           />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-600 mb-1">Precio ($)</label>
-                          <input
-                            type="number"
-                            required
-                            value={nuevoServicioPrecio}
-                            onChange={(e) => setNuevoServicioPrecio(e.target.value)}
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                          />
-                        </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <select
+                              value={extraServDuracion}
+                              onChange={(e) => setExtraServDuracion(e.target.value)}
+                              className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs bg-white"
+                            >
+                              <option value="30">30 minutos</option>
+                              <option value="45">45 minutos</option>
+                              <option value="60">60 minutos</option>
+                              <option value="90">90 minutos</option>
+                              <option value="120">120 minutos</option>
+                            </select>
+                            <input
+                              type="number"
+                              required
+                              placeholder="Precio ($)"
+                              value={extraServPrecio}
+                              onChange={(e) => setExtraServPrecio(e.target.value)}
+                              className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={enviando}
+                            className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition"
+                          >
+                            + Agregar tipo de turno a este local
+                          </button>
+                        </form>
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">
-                          Duración del turno (minutos)
-                        </label>
-                        <select
-                          value={nuevoServicioDuracion}
-                          onChange={(e) => setNuevoServicioDuracion(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
-                        >
-                          <option value="30">30 minutos</option>
-                          <option value="45">45 minutos</option>
-                          <option value="60">60 minutos</option>
-                          <option value="90">90 minutos</option>
-                        </select>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={enviando}
-                        className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition"
-                      >
-                        {enviando ? "Publicando comercio..." : "Publicar comercio en MiTurno"}
-                      </button>
-                    </form>
+                    )}
                   </>
                 )}
               </div>
